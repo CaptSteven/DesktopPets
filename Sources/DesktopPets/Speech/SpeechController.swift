@@ -60,11 +60,8 @@ final class SpeechController {
 
     /// Keeps the bubble positioned and counts down to the next idle remark.
     func tick(dt: Double, petState: String, petFrame: CGRect, visibleFrame: CGRect) {
-        guard isEnabled else {
-            if visibleFor > 0 { dismiss() }
-            return
-        }
-
+        // A visible bubble always ticks down, whatever the Speak setting is: an announcement made
+        // while speech is off must still disappear on its own.
         if visibleFor > 0 {
             visibleFor -= dt
             if visibleFor <= 0 {
@@ -72,16 +69,30 @@ final class SpeechController {
             } else {
                 present(petFrame: petFrame, visibleFrame: visibleFrame)
             }
+            return
         }
+
+        guard isEnabled else { return }
 
         // Unprompted remarks only while the pet is actually idle; asleep or mid-reaction it has
         // nothing to add.
-        guard petState == "idle", visibleFor <= 0 else { return }
+        guard petState == "idle" else { return }
         timeUntilIdleLine -= dt
         if timeUntilIdleLine <= 0 {
             timeUntilIdleLine = Double.random(in: Self.idleInterval)
             react(to: .idle, petState: petState, petFrame: petFrame, visibleFrame: visibleFrame)
         }
+    }
+
+    /// Shows a line regardless of the Speak setting.
+    ///
+    /// Used for UI confirmation — a language switch — rather than pet chatter. It is feedback for
+    /// an action the user just took, so it must appear even with speech turned off, otherwise
+    /// right-clicking would silently change something invisible.
+    func announce(_ text: String, petFrame: CGRect, visibleFrame: CGRect) {
+        currentText = text
+        visibleFor = Self.holdDuration + Self.fadeDuration
+        present(petFrame: petFrame, visibleFrame: visibleFrame)
     }
 
     private func present(petFrame: CGRect, visibleFrame: CGRect) {

@@ -19,9 +19,12 @@ final class PetView: NSView {
         }
     }
 
+    /// A press that never became a drag. The event is passed on so the menu can be popped up where
+    /// the user actually clicked.
+    var onLeftClick: ((NSEvent) -> Void)?
+    var onRightClick: ((NSEvent) -> Void)?
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
-    var onClick: (() -> Void)?
 
     private var dragStartMouse: CGPoint?
     private var dragStartWindowOrigin: CGPoint = .zero
@@ -80,7 +83,13 @@ final class PetView: NSView {
         if isDragging {
             onDragEnd?()
         } else {
-            onClick?()
+            onLeftClick?(event)
         }
+    }
+
+    /// Right-click is the language toggle, so this deliberately does not fall through to
+    /// `NSView.menu`. Returning without calling super also stops AppKit from showing one.
+    override func rightMouseDown(with event: NSEvent) {
+        onRightClick?(event)
     }
 }

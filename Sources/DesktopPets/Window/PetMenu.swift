@@ -1,21 +1,33 @@
 import AppKit
+import DesktopPetsCore
 
-/// Builds the pet's right-click menu.
+/// Builds the pet's menu.
 ///
-/// The menu is attached with `NSView.menu`, so AppKit shows it on right-click without any extra
-/// event handling. It is rebuilt whenever the skin changes so the header stays accurate.
+/// Note this is opened by *left*-clicking the pet (see `PetView`), not by right-click: right-click
+/// is the language toggle. That is why the menu is popped up explicitly rather than attached with
+/// `NSView.menu`.
 enum PetMenu {
-    static func build(target: AnyObject, skinName: String, speechEnabled: Bool) -> NSMenu {
+    static func build(
+        target: AnyObject,
+        skinName: String,
+        speechEnabled: Bool,
+        language: AppLanguage
+    ) -> NSMenu {
+        let strings = MenuStrings.forLanguage(language)
         let menu = NSMenu()
 
-        // A disabled header item doubles as a label for the currently loaded skin.
-        let header = menu.addItem(withTitle: "Skin: \(skinName)", action: nil, keyEquivalent: "")
+        // A disabled header row doubles as a label for the currently loaded skin.
+        let header = menu.addItem(
+            withTitle: strings.skinHeader(name: skinName),
+            action: nil,
+            keyEquivalent: ""
+        )
         header.isEnabled = false
 
         menu.addItem(.separator())
 
         let speak = menu.addItem(
-            withTitle: "Speak",
+            withTitle: strings.speak,
             action: #selector(PetController.toggleSpeech(_:)),
             keyEquivalent: ""
         )
@@ -25,14 +37,14 @@ enum PetMenu {
         menu.addItem(.separator())
 
         let reload = menu.addItem(
-            withTitle: "Reload Skin and Phrases",
+            withTitle: strings.reload,
             action: #selector(PetController.reloadSkin(_:)),
-            keyEquivalent: "r"
+            keyEquivalent: ""
         )
         reload.target = target
 
         let resetPosition = menu.addItem(
-            withTitle: "Reset Position",
+            withTitle: strings.resetPosition,
             action: #selector(PetController.resetPosition(_:)),
             keyEquivalent: ""
         )
@@ -41,9 +53,9 @@ enum PetMenu {
         menu.addItem(.separator())
 
         let quit = menu.addItem(
-            withTitle: "Quit DesktopPets",
+            withTitle: strings.quit,
             action: #selector(PetController.quit(_:)),
-            keyEquivalent: "q"
+            keyEquivalent: ""
         )
         quit.target = target
 

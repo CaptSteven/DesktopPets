@@ -27,6 +27,8 @@ final class PetController {
     private var lastTransitionCount = 0
     private var previousActivity: PetActivity = .idle
     private var timer: Timer?
+    /// Rebuilt whenever the skin or language changes, then popped up on left-click.
+    private var petMenu: NSMenu?
 
     /// Set by the app delegate, which rebuilds the controller to pick up new or edited art.
     var onReloadRequested: (() -> Void)?
@@ -72,7 +74,8 @@ final class PetController {
         refreshMenu()
         view.onDragStart = { [weak self] in self?.handleDragStart() }
         view.onDragEnd = { [weak self] in self?.handleDragEnd() }
-        view.onClick = { [weak self] in self?.handleClick() }
+        view.onLeftClick = { [weak self] event in self?.handleLeftClick(with: event) }
+        view.onRightClick = { [weak self] _ in self?.handleRightClick() }
     }
 
     // MARK: Lifecycle
@@ -157,7 +160,8 @@ final class PetController {
         persistPosition()
     }
 
-    private func handleClick() {
+    /// Left-click: react, then open the menu where the user clicked.
+    private func handleLeftClick(with event: NSEvent) {
         machine.reactToClick()
         // Answer immediately rather than waiting for the next tick: the bubble should feel like a
         // reaction to the click.
@@ -166,6 +170,35 @@ final class PetController {
             petState: machine.activity.animationState,
             petFrame: window.frame,
             visibleFrame: ScreenMapping.visibleFrame(nearest: hotspot)
+        )
+        presentMenu(at: event)
+    }
+
+    /// Right-click: flip the menu language, and say so in the new language.
+    ///
+    /// The announcement is deliberate. The menu is closed at this point, so without it the toggle
+    /// would change something you cannot see until you next left-click.
+    private func handleRightClick() {
+        let language = config.toggleLanguage()
+        refreshMenu()
+        speech.announce(
+            language.switchAnnouncement,
+            petFrame: window.frame,
+            visibleFrame: ScreenMapping.visibleFrame(nearest: hotspot)
+        )
+    }
+
+    /// Pops the menu up at the click.
+    ///
+    /// The app is an accessory and its window can never become key, so it has to be activated
+    /// first — otherwise the menu would appear but never receive the mouse.
+    private func presentMenu(at event: NSEvent) {
+        guard let petMenu else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        petMenu.popUp(
+            positioning: nil,
+            at: view.convert(event.locationInWindow, from: nil),
+            in: view
         )
     }
 
@@ -259,11 +292,14 @@ final class PetController {
         }
     }
 
+    /// Rebuilds the menu so its labels follow the current language and its checkboxes the current
+    /// settings. It is not attached to the view: left-click pops it up explicitly.
     private func refreshMenu() {
-        view.menu = PetMenu.build(
+        petMenu = PetMenu.build(
             target: self,
             skinName: skin.name,
-            speechEnabled: speech.isEnabled
+            speechEnabled: speech.isEnabled,
+            language: config.language
         )
     }
 

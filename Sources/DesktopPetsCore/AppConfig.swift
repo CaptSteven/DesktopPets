@@ -14,6 +14,7 @@ public final class ConfigStore {
         case walkSpeed = "walkSpeed"
         case sleepAfter = "sleepAfter"
         case speechEnabled = "speechEnabled"
+        case language = "language"
     }
 
     /// Points per second. Slow enough to look like ambling rather than sliding.
@@ -85,6 +86,27 @@ public final class ConfigStore {
         set { defaults.set(newValue, forKey: Key.speechEnabled.rawValue) }
     }
 
+    /// Menu language. Falls back to the system's preferred language until the user toggles it.
+    public var language: AppLanguage {
+        get {
+            guard let raw = defaults.string(forKey: Key.language.rawValue),
+                  let stored = AppLanguage(rawValue: raw)
+            else {
+                return AppLanguage.matching(preferredLanguages: Locale.preferredLanguages)
+            }
+            return stored
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.language.rawValue) }
+    }
+
+    /// Flips the menu language and returns the new value.
+    @discardableResult
+    public func toggleLanguage() -> AppLanguage {
+        let next = language.toggled
+        language = next
+        return next
+    }
+
     /// A `WalkPlan` built from the stored speed, with everything else at its default.
     public func walkPlan(base: WalkPlan = WalkPlan()) -> WalkPlan {
         var plan = base
@@ -94,7 +116,7 @@ public final class ConfigStore {
 
     public func reset() {
         for key in [Key.skinName, Key.petX, Key.petY, Key.muted, Key.walkSpeed,
-                    Key.sleepAfter, Key.speechEnabled] {
+                    Key.sleepAfter, Key.speechEnabled, Key.language] {
             defaults.removeObject(forKey: key.rawValue)
         }
     }

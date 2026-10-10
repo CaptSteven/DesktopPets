@@ -3,13 +3,13 @@ import Foundation
 import Testing
 @testable import DesktopPetsCore
 
-@Suite struct ConfigStoreTests {
-    // A unique suite per test so cases cannot leak into each other or the real preferences.
-    let store: ConfigStore
+/// `.serialized` because every test in here shares one `UserDefaults` suite, which is wiped at the
+/// start of each test. Serial execution is what makes that safe, and it is also what keeps a test
+/// run from leaving more than one plist behind.
+@Suite(.serialized) struct ConfigStoreTests {
+    let defaults = EphemeralDefaults(name: "DesktopPetsTests-ConfigStore")
 
-    init() {
-        store = ConfigStore.ephemeral(name: "DesktopPetsTests-\(UUID().uuidString)")
-    }
+    var store: ConfigStore { defaults.store }
 
     // MARK: Defaults
 
@@ -47,10 +47,9 @@ import Testing
 
     @Test func settingOnlyXDoesNotProduceAPosition() {
         // Simulates an older or partially-written preferences file.
-        let raw = UserDefaults(suiteName: "DesktopPetsTests-partial-\(UUID().uuidString)")!
-        raw.set(42.0, forKey: ConfigStore.Key.petX.rawValue)
+        defaults.raw.set(42.0, forKey: ConfigStore.Key.petX.rawValue)
 
-        #expect(ConfigStore(defaults: raw).petPosition == nil)
+        #expect(ConfigStore(defaults: defaults.raw).petPosition == nil)
     }
 
     @Test func flagRoundTripsIncludingExplicitFalse() {
@@ -110,16 +109,62 @@ import Testing
         #expect(store.isSpeechEnabled)
     }
 
-    @Test func valuesAreSharedBetweenStoresOverTheSameSuite() {
-        let name = "DesktopPetsTests-shared-\(UUID().uuidString)"
-        let first = ConfigStore.ephemeral(name: name)
-        first.skinName = "shared"
-        first.petPosition = CGPoint(x: 5, y: 6)
+    // MARK: Language
 
-        // A second store over the same suite sees the same values, which is what makes
-        // relaunching the app restore the pet where it was.
-        let second = ConfigStore(defaults: UserDefaults(suiteName: name)!)
+    @Test func languageRoundTrips() {
+        store.language = .english
+        #expect(store.language == .english)
+
+        store.language = .chinese
+        #expect(store.language == .chinese)
+    }
+
+    @Test func toggleLanguageFlipsAndReturnsTheNewValue() {
+        store.language = .chinese
+
+        #expect(store.toggleLanguage() == .english)
+        #expect(store.language == .english, "the toggle must persist, not just report")
+
+        #expect(store.toggleLanguage() == .chinese)
+        #expect(store.language == .chinese)
+    }
+
+    @Test func anUnsetLanguageFallsBackToTheSystemPreference() {
+        // Whatever the machine's locale happens to be, the fallback has to be a real language.
+        let expected = AppLanguage.matching(preferredLanguages: Locale.preferredLanguages)
+        #expect(store.language == expected)
+    }
+
+    @Test func anUnrecognisedStoredLanguageIsIgnored() {
+        defaults.raw.set("klingon", forKey: ConfigStore.Key.language.rawValue)
+
+        let expected = AppLanguage.matching(preferredLanguages: Locale.preferredLanguages)
+        #expect(ConfigStore(defaults: defaults.raw).language == expected)
+    }
+
+    @Test func resetClearsTheLanguage() {
+        // Pick the language that is *not* the system default, so reverting is observable.
+        let systemDefault = AppLanguage.matching(preferredLanguages: Locale.preferredLanguages)
+        store.language = systemDefault.toggled
+        #expect(store.language == systemDefault.toggled)
+
+        store.reset()
+
+        #expect(store.language == systemDefault, "reset should fall back to the system default")
+    }
+
+    // MARK: Sharing
+
+    @Test func valuesAreSharedBetweenStoresOverTheSameSuite() {
+        store.skinName = "shared"
+        store.petPosition = CGPoint(x: 5, y: 6)
+        store.language = .english
+
+        // A second store over the same suite sees the same values, which is what makes relaunching
+        // the app restore the pet where it was and in the language it was left in.
+        let second = ConfigStore(defaults: defaults.raw)
         #expect(second.skinName == "shared")
         #expect(second.petPosition == CGPoint(x: 5, y: 6))
+        #expect(second.language == .english)
     }
 }

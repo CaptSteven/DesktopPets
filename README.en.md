@@ -13,7 +13,20 @@ your screen, can be dragged around, and talks in a little speech bubble.
 swift run DesktopPets                # run it
 ```
 
-Right-click the pet for **Speak**, **Reload Skin and Phrases**, **Reset Position** and **Quit**.
+## Controls
+
+| Action | What it does |
+| --- | --- |
+| **Left click** | Opens the menu: speak toggle, reload skin and phrases, reset position, quit |
+| **Left drag** | Moves the pet. On release it is pulled back on screen and its position is remembered |
+| **Right click** | Switches the menu between Chinese and English |
+
+Switching language makes the pet say a short line in the new language. The menu is closed at that
+point, so without it the toggle would change something you cannot see. That line ignores the Speak
+setting — it is feedback for an action, not pet chatter.
+
+The menu language follows your system language until you toggle it (`zh*` → Chinese, otherwise
+English), and your choice is remembered.
 
 To build a double-clickable app:
 

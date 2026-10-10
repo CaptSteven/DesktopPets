@@ -46,6 +46,7 @@ enum SkinVerifier {
             }
 
             try reportPhrases(from: locator)
+            reportMenu(config: ConfigStore())
 
             print("OK")
             exit(0)
@@ -80,6 +81,22 @@ enum SkinVerifier {
             print("  note: no phrases for \(missing.joined(separator: ", ")); "
                 + "those reactions will fall back to idle")
         }
+    }
+
+    /// Reports the menu in both languages, plus which one is active.
+    ///
+    /// The menu is only visible after a left-click, so this is the only way to check the labels
+    /// without clicking.
+    private static func reportMenu(config: ConfigStore) {
+        print("Menu language: \(config.language.rawValue)")
+        for language in AppLanguage.allCases {
+            let strings = MenuStrings.forLanguage(language)
+            let marker = language == config.language ? "->" : "  "
+            print("  \(marker) \(language.rawValue): \(strings.skinHeader(name: "<skin>"))"
+                + " | \(strings.speak) | \(strings.reload)"
+                + " | \(strings.resetPosition) | \(strings.quit)")
+        }
+        print("  right-click toggles; bubble announces: \(config.language.switchAnnouncement)")
     }
 
     /// Share of the frame that is clickable. A sprite with a fully opaque bounding box has no

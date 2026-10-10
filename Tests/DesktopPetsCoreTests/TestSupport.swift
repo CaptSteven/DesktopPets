@@ -1,4 +1,5 @@
 import Foundation
+@testable import DesktopPetsCore
 
 // Gotcha worth knowing before adding assertions: Swift Testing captures each side of a comparison
 // independently. When one side is `CGFloat` and the other is a *compound* expression such as
@@ -10,6 +11,40 @@ import Foundation
 //     let expectedY = frame.maxY - size.height   // CGFloat
 //     #expect(clamped.y == expectedY)
 
+
+/// A throwaway `UserDefaults` suite that cleans up after itself.
+///
+/// `UserDefaults(suiteName:)` writes a real `~/Library/Preferences/<name>.plist`, and `cfprefsd`
+/// keeps the file around even after `removePersistentDomain`. Two things keep a test run from
+/// littering the user's home directory: callers pass a *fixed* suite name rather than a fresh UUID
+/// per test (so a run creates at most one file, not one per test), and `deinit` deletes both the
+/// domain and the file.
+///
+/// Because the name is shared, suites using this must be `.serialized` so tests cannot interfere.
+final class EphemeralDefaults {
+    let name: String
+    let store: ConfigStore
+
+    init(name: String) {
+        self.name = name
+        self.store = ConfigStore.ephemeral(name: name)
+    }
+
+    /// A raw `UserDefaults` over the same suite, for tests that need to poke values directly.
+    var raw: UserDefaults {
+        UserDefaults(suiteName: name) ?? .standard
+    }
+
+    deinit {
+        UserDefaults.standard.removePersistentDomain(forName: name)
+        UserDefaults.standard.synchronize()
+
+        // cfprefsd usually leaves the backing file behind; take it out too.
+        let plist = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/\(name).plist")
+        try? FileManager.default.removeItem(at: plist)
+    }
+}
 
 /// Deterministic RNG (splitmix64) so tests can assert on "random" choices.
 struct SeededGenerator: RandomNumberGenerator {
