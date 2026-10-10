@@ -50,7 +50,7 @@ enum SkinVerifier {
                     + "loop=\(animation.spec.loop) opaque=\(Int(opacity * 100))%")
             }
 
-            try reportPhrases(from: locator)
+            try reportPhrases(from: locator, active: config.language)
             reportMenu(config: config)
 
             print("OK")
@@ -67,10 +67,9 @@ enum SkinVerifier {
     ///
     /// A missing category is not fatal — the pet falls back to `idle` — but it is worth flagging,
     /// because a typo in a `.json` key would otherwise only show up as "the pet never talks".
-    private static func reportPhrases(from locator: AssetLocator) throws {
+    private static func reportPhrases(from locator: AssetLocator, active: AppLanguage) throws {
         let directory = locator.phrasesDirectory
-        print("Phrases: \(directory.path)")
-
+        print("Phrases: \(directory.path) (active: \(active.rawValue))")
         let present = PhraseBook.availableLanguages(in: directory)
         let missing = AppLanguage.allCases.filter { !present.contains($0) }
 
@@ -87,7 +86,7 @@ enum SkinVerifier {
             let counts = book.allCategories
                 .map { "\($0) \(book.phrases(for: $0).count)" }
                 .joined(separator: ", ")
-            print("  \(language.rawValue): \(counts)")
+            print("  \(language == active ? "->" : "  ") \(language.rawValue): \(counts)")
 
             let absent = SpeechEvent.allCases
                 .map(\.rawValue)
