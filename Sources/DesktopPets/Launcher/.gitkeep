@@ -1,0 +1,5 @@
+# Placeholder so git tracks this directory.
+#
+# Planned home for launching the pet at login (an SMAppService login item, plus the small helper
+# that starts the app hidden). Not implemented yet — the right-click menu covers Quit, Reload,
+# Reset Position and Speak for now.

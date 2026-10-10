@@ -1,0 +1,5 @@
+# Placeholder so git tracks this directory.
+#
+# Planned home for a settings window (skin picker, walk speed, sleep timeout, phrase editing).
+# Everything it would edit is already persisted by ConfigStore, and the tuning values already
+# exist on WalkPlan, so this is additive. Reachable today only through the right-click menu.

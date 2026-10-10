@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>DesktopPets</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.desktoppets.DesktopPets</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>DesktopPets</string>
+    <key>CFBundleDisplayName</key>
+    <string>DesktopPets</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+
+    <!-- No Dock icon, no menu bar: the pet is the whole UI. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- The pet holds a window open indefinitely, so it must not be reaped as an idle app. -->
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+</dict>
+</plist>

@@ -1,0 +1,14 @@
+{
+  "name": "placeholder",
+  "frameSize": { "width": 64, "height": 64 },
+  "scale": 2,
+  "anchor": "bottomCenter",
+  "hitAlphaThreshold": 16,
+  "states": {
+      "idle": { "fps": 6.0, "loop": true },
+      "walk": { "fps": 10.0, "loop": true },
+      "drag": { "fps": 8.0, "loop": true },
+      "sleep": { "fps": 3.0, "loop": true },
+      "click": { "fps": 12.0, "loop": false }
+  }
+}

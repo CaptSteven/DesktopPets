@@ -1,0 +1,13 @@
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+dist/
+.DS_Store
+*.log
+
+# Packer output: derived from each skin's src/ frames, so it would only add churn to diffs.
+# Regenerate with Scripts/pack-skins.sh. Without it, the app falls back to reading src/ directly.
+Resources/Skins/*/build/
+Resources/Skins/*/preview/
