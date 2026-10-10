@@ -103,7 +103,12 @@ public struct SkinManifest: Codable, Equatable {
     /// Display scale. `2` renders a 64x64 frame as 128x128 points (i.e. a @2x asset).
     public var scale: Double
     public var anchor: Anchor
-    /// A pixel is "hittable" when its alpha is at or above this value. Used for click passthrough.
+    /// Alpha at or above which a pixel counts as solid, for the `--verify-skin` coverage report.
+    ///
+    /// This used to drive per-pixel click-through, which is gone: the sprite window now takes
+    /// clicks across its whole area, because tying "can I grab the pet" to the art meant a sparse
+    /// or repositioned pose could make it unclickable. The field is kept so existing `skin.json`
+    /// files stay valid, and it still gives the coverage report a threshold to work from.
     public var hitAlphaThreshold: UInt8
     public var states: [String: StateSpec]
 

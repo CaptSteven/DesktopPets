@@ -16,7 +16,6 @@ final class PetController {
     private let skin: LoadedSkin
     private let window: PetWindow
     private let view: PetView
-    private let passthrough: MousePassthrough
     private let animator = AnimationController()
     private let speech: SpeechController
 
@@ -53,8 +52,6 @@ final class PetController {
         view = PetView(frame: CGRect(origin: .zero, size: windowSize))
         view.autoresizingMask = [.width, .height]
         window.contentView = view
-
-        passthrough = MousePassthrough(window: window, threshold: skin.manifest.hitAlphaThreshold)
 
         machine = PetStateMachine(
             walkPlan: config.walkPlan(),
@@ -147,13 +144,10 @@ final class PetController {
     // MARK: Interaction
 
     private func handleDragStart() {
-        // The window must keep receiving events for the whole drag, whatever pixel is underneath.
-        passthrough.setForcedInteractive(true)
         machine.beginDrag()
     }
 
     private func handleDragEnd() {
-        passthrough.setForcedInteractive(false)
         machine.endDrag()
 
         // The user can drop the pet anywhere, including off-screen: pull it back and record where
@@ -275,7 +269,6 @@ final class PetController {
         if menuController.isVisible {
             animator.advance(by: dt)
             view.frameImage = animator.frame
-            updatePassthrough()
             return
         }
 
@@ -299,7 +292,6 @@ final class PetController {
 
         updateAnimation(for: activity, dt: dt)
         updateSpeech(for: activity, dt: dt, visible: visible)
-        updatePassthrough()
     }
 
     private func moveWindowToHotspot(visible: CGRect) {
@@ -356,12 +348,6 @@ final class PetController {
         )
     }
 
-    private func updatePassthrough() {
-        passthrough.update { [weak self] localPoint in
-            self?.alpha(atWindowPoint: localPoint)
-        }
-    }
-
     private var menuStrings: MenuStrings { MenuStrings.forLanguage(config.language) }
 
     /// Installed skins, read fresh each time so dropping a new folder in and hitting Reload picks
@@ -402,20 +388,6 @@ final class PetController {
             Log.warning("Could not read \(language.rawValue) phrases (\(error)); the pet will stay quiet")
             return PhraseBook()
         }
-    }
-
-    /// Samples the current frame's alpha for a point in window coordinates, accounting for the
-    /// horizontal flip used when the pet faces left.
-    private func alpha(atWindowPoint point: CGPoint) -> UInt8? {
-        guard let mask = animator.mask else { return nil }
-        let size = window.frame.size
-        guard size.width > 0, size.height > 0 else { return nil }
-
-        var u = point.x / size.width
-        let v = point.y / size.height
-        if view.facing.isFlipped { u = 1 - u }
-
-        return mask.alpha(atNormalizedX: u, y: v)
     }
 
     // MARK: Placement

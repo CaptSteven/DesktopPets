@@ -96,6 +96,7 @@ final class PetView: NSView {
     /// Right-click is the language toggle, so this deliberately does not fall through to
     /// `NSView.menu`. Returning without calling super also stops AppKit from showing one.
     override func rightMouseDown(with event: NSEvent) {
+        Log.window.notice("rightMouseDown")
         onRightClick?(event)
     }
 }

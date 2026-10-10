@@ -45,7 +45,10 @@ enum SkinVerifier {
 
             for state in skin.animations.keys.sorted() {
                 guard let animation = skin.animations[state] else { continue }
-                let opacity = opaqueFraction(of: animation.masks[0])
+                let opacity = opaqueFraction(
+                    of: animation.masks[0],
+                    threshold: skin.manifest.hitAlphaThreshold
+                )
                 print("  \(state): \(animation.frameCount) frame(s) @ \(animation.spec.fps)fps "
                     + "loop=\(animation.spec.loop) opaque=\(Int(opacity * 100))%")
             }
@@ -135,13 +138,14 @@ enum SkinVerifier {
         }
     }
 
-    /// Share of the frame that is clickable. A sprite with a fully opaque bounding box has no
-    /// click-through, so this is worth surfacing.
-    private static func opaqueFraction(of mask: AlphaMask) -> Double {
+    /// Share of the frame counted as solid. A pose that covers very little of its frame is worth
+    /// knowing about: it used to decide where the pet could be clicked, and it still means the
+    /// sprite looks much smaller on screen than its window.
+    private static func opaqueFraction(of mask: AlphaMask, threshold: UInt8) -> Double {
         guard mask.width > 0, mask.height > 0 else { return 0 }
         var opaque = 0
         for y in 0..<mask.height {
-            for x in 0..<mask.width where mask.alpha(atX: x, y: y) >= 16 {
+            for x in 0..<mask.width where mask.alpha(atX: x, y: y) >= threshold {
                 opaque += 1
             }
         }

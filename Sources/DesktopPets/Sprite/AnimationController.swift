@@ -8,7 +8,6 @@ import DesktopPetsCore
 final class AnimationController {
     private(set) var state: String = ""
     private(set) var frame: CGImage?
-    private(set) var mask: AlphaMask?
 
     private var animation: SpriteAnimation?
     private var clock = AnimationClock(frameCount: 0, fps: 1, loops: true)
@@ -25,7 +24,6 @@ final class AnimationController {
             state = ""
             self.animation = nil
             frame = nil
-            mask = nil
             return
         }
 
@@ -56,11 +54,9 @@ final class AnimationController {
     private func refresh() {
         guard let animation, !animation.frames.isEmpty else {
             frame = nil
-            mask = nil
             return
         }
         let index = min(max(clock.frameIndex, 0), animation.frames.count - 1)
         frame = animation.frames[index]
-        mask = animation.masks[index]
     }
 }

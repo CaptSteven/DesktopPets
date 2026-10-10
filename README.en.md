@@ -47,24 +47,42 @@ or after 30 seconds of no activity.
 
 ## Diagnosing "I cannot click the pet"
 
-Whether the pet is clickable depends entirely on the alpha of the pixel under the cursor, and that
-is invisible from outside the process — so the relevant state goes to the system log. Start here:
+## Diagnosing "I cannot click the pet"
+
+The whole sprite window takes clicks now, with no per-pixel test, so there are only two things that
+can go wrong, and the log distinguishes them:
 
 ```sh
 log stream --predicate 'subsystem == "com.desktoppets.DesktopPets"'
 ```
 
-You will see `click-through ON/OFF` flip as the cursor enters and leaves the pet:
+- **No `mouseDown` in the log** → the click never reached the window. Usually something is on top
+  of it (an auto-hiding Dock sliding up, for instance), or the pet was dragged to another display.
+- **`mouseDown` but nothing happens** → the event arrived and the logic is at fault; paste the log.
 
-- `ON — cursor outside window` → the cursor is not over the pet's window
-- `ON — alpha 0 vs threshold 16` → inside the window, but that pixel is transparent (normal;
-  clicks pass through to whatever is behind)
-- `OFF — forced interactive (dragging)` → events are forced on for the duration of a drag
-- `ON — no alpha mask available` → **a real fault**: no decoded frame, so the pet is entirely
-  unclickable
+The coordinates in `mouseDown at (x, y)` are window-local, which tells you which part of the sprite
+was hit.
 
-`mouseDown at ...` prints whenever the pet is pressed, which confirms whether clicks are reaching
-the window at all.
+### A trap this used to have (fixed)
+
+Clickability used to be decided **per pixel**: the 30Hz tick sampled the alpha under the cursor and
+toggled `ignoresMouseEvents` wherever the sprite was transparent. That made "can I click the pet"
+depend on the *art*, and on the current frame:
+
+| `guitarist` state | Opaque | Alpha at the window centre |
+| --- | --- | --- |
+| idle | 16% | 255 |
+| walk | 17% | 255 |
+| **sleep** | **12%** | **0** |
+
+The pet **falls asleep after 30 seconds** of no interaction, and the sleeping pose is only 12%
+opaque with the window's centre left empty. Sleep can only be broken by a click — so "click the
+centre → passes through → never wakes" looked exactly like "after a while it stops responding to
+clicks and cannot be dragged".
+
+The whole window now accepts clicks, so the pet can always be grabbed. The cost is that the empty
+corners of the window also swallow clicks instead of passing them on, but the window is only as
+large as the sprite (128pt here), so that is small.
 
 To build a double-clickable app:
 
@@ -175,8 +193,8 @@ Rules the loader enforces:
 
 - **Filenames sort into play order**, so zero-pad them (`000.png`, not `0.png`).
 - **Every frame in a skin must be the same size**, matching `frameSize` in `skin.json`.
-- **Frames must have transparent backgrounds.** Transparent pixels are what makes clicks pass
-  through to whatever is behind the pet.
+- **Frames must have transparent backgrounds.** For looks, and so the pet does not sit inside a
+  solid block of colour.
 - `idle` and `walk` are required. `drag`, `sleep` and `click` are optional; if you leave one out,
   the pet falls back to `idle` for it.
 - **Unknown state names are rejected**, so a typo like `sllep` fails loudly instead of silently
@@ -277,11 +295,9 @@ adding a skin never touches `Package.swift`, and `build-app.sh` copies the direc
 
 ## Notes and limitations
 
-- **Click-through is polled, not event-driven.** The 30Hz tick that drives the animation also
-  samples the sprite's alpha under the cursor and toggles `ignoresMouseEvents`. That avoids global
-  event monitors (and their permission and focus subtleties) at the cost of up to ~33ms before a
-  click starts passing through. `MousePassthrough` is the only place to change if that ever
-  matters.
+- **The whole sprite window accepts clicks**, with no per-pixel passthrough (see "A trap this used
+  to have" above). The empty ring around the pet therefore swallows clicks rather than passing them
+  to whatever is behind.
 - **While the menu panel is open it installs a global mouse monitor** (mouse only — this needs no
   accessibility permission) so that clicking elsewhere dismisses it. Nothing is installed while the
   menu is closed.

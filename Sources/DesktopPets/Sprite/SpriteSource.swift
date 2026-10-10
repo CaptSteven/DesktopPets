@@ -2,7 +2,11 @@ import AppKit
 import DesktopPetsCore
 import ImageIO
 
-/// Per-pixel alpha of a single frame, used to decide where the pet is clickable.
+/// Per-pixel alpha of a single frame.
+///
+/// No longer decides where the pet is clickable — the whole sprite window takes clicks now. It is
+/// kept for the `--verify-skin` coverage report, which is how you notice that a pose barely fills
+/// its frame.
 ///
 /// Row 0 is the bottom row: CoreGraphics bitmaps fill bottom-up, which matches AppKit's
 /// bottom-left window coordinates, so no vertical flip is needed anywhere.
