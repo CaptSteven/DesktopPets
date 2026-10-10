@@ -36,6 +36,8 @@ public struct MenuStrings: Equatable {
     /// Format for the disabled header row. `%@` is the skin name.
     public let skinFormat: String
     public let speak: String
+    /// Names the language it switches *to*, so the row is unambiguous without needing a checkmark.
+    public let switchLanguage: String
     public let reload: String
     public let resetPosition: String
     public let quit: String
@@ -50,6 +52,7 @@ public struct MenuStrings: Equatable {
             return MenuStrings(
                 skinFormat: "皮肤：%@",
                 speak: "说话",
+                switchLanguage: "切换语言：English",
                 reload: "重新载入皮肤与台词",
                 resetPosition: "回到默认位置",
                 quit: "退出 DesktopPets"
@@ -58,6 +61,7 @@ public struct MenuStrings: Equatable {
             return MenuStrings(
                 skinFormat: "Skin: %@",
                 speak: "Speak",
+                switchLanguage: "Switch language: 中文",
                 reload: "Reload Skin and Phrases",
                 resetPosition: "Reset Position",
                 quit: "Quit DesktopPets"

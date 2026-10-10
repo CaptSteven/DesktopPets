@@ -90,13 +90,34 @@ enum SkinVerifier {
     private static func reportMenu(config: ConfigStore) {
         print("Menu language: \(config.language.rawValue)")
         for language in AppLanguage.allCases {
-            let strings = MenuStrings.forLanguage(language)
+            let items = PetMenuModel.items(
+                strings: MenuStrings.forLanguage(language),
+                skinName: "<skin>",
+                speechEnabled: true
+            )
             let marker = language == config.language ? "->" : "  "
-            print("  \(marker) \(language.rawValue): \(strings.skinHeader(name: "<skin>"))"
-                + " | \(strings.speak) | \(strings.reload)"
-                + " | \(strings.resetPosition) | \(strings.quit)")
+            print("  \(marker) \(language.rawValue):")
+            for item in items {
+                print("       \(describe(item))")
+            }
         }
-        print("  right-click toggles; bubble announces: \(config.language.switchAnnouncement)")
+        print("  left-click opens the panel; right-click toggles language")
+        print("  bubble announces: \(config.language.switchAnnouncement)")
+    }
+
+    /// Renders a menu row the way it would appear, so the shape of the menu is visible in a
+    /// terminal without having to open it.
+    private static func describe(_ item: MenuItem) -> String {
+        switch item {
+        case .header(let title):
+            return "# \(title)"
+        case .separator:
+            return "---"
+        case .action(let action, let title):
+            return "\(title)   [\(action.rawValue)]"
+        case .toggle(let action, let title, let isOn):
+            return "[\(isOn ? "x" : " ")] \(title)   [\(action.rawValue)]"
+        }
     }
 
     /// Share of the frame that is clickable. A sprite with a fully opaque bounding box has no

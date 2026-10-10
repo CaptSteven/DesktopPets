@@ -41,6 +41,7 @@ import Testing
             for (label, value) in [
                 ("skinFormat", strings.skinFormat),
                 ("speak", strings.speak),
+                ("switchLanguage", strings.switchLanguage),
                 ("reload", strings.reload),
                 ("resetPosition", strings.resetPosition),
                 ("quit", strings.quit),

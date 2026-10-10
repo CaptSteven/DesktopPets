@@ -27,8 +27,11 @@ final class PetController {
     private var lastTransitionCount = 0
     private var previousActivity: PetActivity = .idle
     private var timer: Timer?
-    /// Rebuilt whenever the skin or language changes, then popped up on left-click.
-    private var petMenu: NSMenu?
+    /// Draws the pet's own menu. This is the only route to Quit from the sprite, so it deliberately
+    /// uses no blocking API — see `showMenu(at:)`.
+    private let menuController = PetMenuController()
+    /// Always-reachable escape hatch in the menu bar, so "I cannot close it" is not possible.
+    private let statusItem = StatusItemController()
 
     /// Set by the app delegate, which rebuilds the controller to pick up new or edited art.
     var onReloadRequested: (() -> Void)?
@@ -95,6 +98,8 @@ final class PetController {
         timer?.invalidate()
         timer = nil
         speech.stop()
+        menuController.close()
+        statusItem.remove()
         window.orderOut(nil)
     }
 
@@ -171,14 +176,45 @@ final class PetController {
             petFrame: window.frame,
             visibleFrame: ScreenMapping.visibleFrame(nearest: hotspot)
         )
-        presentMenu(at: event)
+        showMenu(at: NSEvent.mouseLocation)
     }
 
     /// Right-click: flip the menu language, and say so in the new language.
-    ///
-    /// The announcement is deliberate. The menu is closed at this point, so without it the toggle
-    /// would change something you cannot see until you next left-click.
     private func handleRightClick() {
+        switchLanguage()
+    }
+
+    /// Opens the pet's menu with its top-left corner at `point`.
+    ///
+    /// Two things are deliberately absent here. There is no `NSApp.activate`, which previously left
+    /// the app running with no key window — a state where clicks stop being delivered. And there is
+    /// no `NSMenu.popUp`, which runs a nested modal event loop; putting that in front of the only
+    /// route to Quit is how the pet became impossible to close.
+    private func showMenu(at point: CGPoint) {
+        menuController.show(
+            items: menuItems,
+            at: point,
+            within: ScreenMapping.visibleFrame(nearest: hotspot),
+            onAction: { [weak self] action in self?.perform(action) }
+        )
+    }
+
+    /// Dispatches a menu choice, wherever it came from: the pet's panel or the menu-bar item.
+    private func perform(_ action: MenuAction) {
+        switch action {
+        case .toggleSpeech: toggleSpeech(nil)
+        case .switchLanguage: switchLanguage()
+        case .reload: reloadSkin(nil)
+        case .resetPosition: resetPosition(nil)
+        case .quit: quit(nil)
+        }
+    }
+
+    /// Flips the menu language and announces it in the new one.
+    ///
+    /// The announcement is deliberate: the menu is closed by the time this runs, so without it the
+    /// toggle would change something you cannot see until you next open the menu.
+    private func switchLanguage() {
         let language = config.toggleLanguage()
         refreshMenu()
         speech.announce(
@@ -188,26 +224,22 @@ final class PetController {
         )
     }
 
-    /// Pops the menu up at the click.
-    ///
-    /// The app is an accessory and its window can never become key, so it has to be activated
-    /// first — otherwise the menu would appear but never receive the mouse.
-    private func presentMenu(at event: NSEvent) {
-        guard let petMenu else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        petMenu.popUp(
-            positioning: nil,
-            at: view.convert(event.locationInWindow, from: nil),
-            in: view
-        )
-    }
-
     // MARK: Frame loop
 
     private func tick() {
         let now = ProcessInfo.processInfo.systemUptime
         let dt = min(max(now - lastTickTime, 0), Self.maxTickDelta)
         lastTickTime = now
+
+        // The menu is anchored where it was opened, so the pet has to hold still while it is up —
+        // and it should not wander off or doze off mid-choice either. Animation keeps running so it
+        // does not look frozen.
+        if menuController.isVisible {
+            animator.advance(by: dt)
+            view.frameImage = animator.frame
+            updatePassthrough()
+            return
+        }
 
         let windowSize = window.frame.size
         let visible = ScreenMapping.visibleFrame(nearest: hotspot)
@@ -292,15 +324,20 @@ final class PetController {
         }
     }
 
-    /// Rebuilds the menu so its labels follow the current language and its checkboxes the current
-    /// settings. It is not attached to the view: left-click pops it up explicitly.
-    private func refreshMenu() {
-        petMenu = PetMenu.build(
-            target: self,
+    /// The menu description, rebuilt on demand so it always reflects the current language, skin and
+    /// settings.
+    private var menuItems: [MenuItem] {
+        PetMenuModel.items(
+            strings: MenuStrings.forLanguage(config.language),
             skinName: skin.name,
-            speechEnabled: speech.isEnabled,
-            language: config.language
+            speechEnabled: speech.isEnabled
         )
+    }
+
+    /// Pushes the menu to the menu-bar item. The pet's panel reads `menuItems` directly when it
+    /// opens, and both are built from the same description so they cannot drift apart.
+    private func refreshMenu() {
+        statusItem.update(items: menuItems) { [weak self] action in self?.perform(action) }
     }
 
     /// Reads `Resources/Phrases/*.json`. A malformed file leaves the pet silent rather than

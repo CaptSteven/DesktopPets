@@ -17,9 +17,10 @@ swift run DesktopPets                # run it
 
 | Action | What it does |
 | --- | --- |
-| **Left click** | Opens the menu: speak toggle, reload skin and phrases, reset position, quit |
+| **Left click** | Opens the menu at the pointer: speak toggle, switch language, reload, reset position, quit |
 | **Left drag** | Moves the pet. On release it is pulled back on screen and its position is remembered |
 | **Right click** | Switches the menu between Chinese and English |
+| **Menu-bar icon** (🐾) | The same menu, always reachable |
 
 Switching language makes the pet say a short line in the new language. The menu is closed at that
 point, so without it the toggle would change something you cannot see. That line ignores the Speak
@@ -27,6 +28,43 @@ setting — it is feedback for an action, not pet chatter.
 
 The menu language follows your system language until you toggle it (`zh*` → Chinese, otherwise
 English), and your choice is remembered.
+
+### Why there is also a menu-bar icon
+
+Every control the pet has hangs off a **sprite you have to click**, which is a single point of
+failure: if the pet is covered, off-screen, or not receiving clicks, there is no way to quit it. The
+menu-bar item does not depend on the pet's window, is the standard configuration for an
+`.accessory` app, and exists specifically to make "I cannot close it" impossible.
+
+### The menu is self-drawn, and does not steal focus
+
+It uses `.nonactivatingPanel`: it takes clicks **without** bringing this app forward, so typing in
+whatever you were using is not interrupted when the menu opens.
+
+The trade-off is that **Escape does not close it** — receiving key events would mean becoming key,
+which is exactly the focus stealing this avoids. It closes when you pick an item, click outside it,
+or after 30 seconds of no activity.
+
+## Diagnosing "I cannot click the pet"
+
+Whether the pet is clickable depends entirely on the alpha of the pixel under the cursor, and that
+is invisible from outside the process — so the relevant state goes to the system log. Start here:
+
+```sh
+log stream --predicate 'subsystem == "com.desktoppets.DesktopPets"'
+```
+
+You will see `click-through ON/OFF` flip as the cursor enters and leaves the pet:
+
+- `ON — cursor outside window` → the cursor is not over the pet's window
+- `ON — alpha 0 vs threshold 16` → inside the window, but that pixel is transparent (normal;
+  clicks pass through to whatever is behind)
+- `OFF — forced interactive (dragging)` → events are forced on for the duration of a drag
+- `ON — no alpha mask available` → **a real fault**: no decoded frame, so the pet is entirely
+  unclickable
+
+`mouseDown at ...` prints whenever the pet is pressed, which confirms whether clicks are reaching
+the window at all.
 
 To build a double-clickable app:
 
@@ -150,6 +188,10 @@ adding a skin never touches `Package.swift`, and `build-app.sh` copies the direc
   event monitors (and their permission and focus subtleties) at the cost of up to ~33ms before a
   click starts passing through. `MousePassthrough` is the only place to change if that ever
   matters.
+- **While the menu panel is open it installs a global mouse monitor** (mouse only — this needs no
+  accessibility permission) so that clicking elsewhere dismisses it. Nothing is installed while the
+  menu is closed.
+- **Escape does not close the menu**, for the focus reason explained above.
 - **The app is ad-hoc signed.** It runs on the machine that built it. Copying it elsewhere hits
   Gatekeeper; distributing it would need a developer certificate and `notarytool`.
 - **macOS 14 is the floor**, because the Swift Testing framework bundled with the toolchain is

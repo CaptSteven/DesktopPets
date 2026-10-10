@@ -52,8 +52,14 @@ final class PetView: NSView {
 
     // MARK: Mouse
 
+    /// Without this, the first click on the window of an inactive app only activates it and never
+    /// reaches the view — so the pet would appear to swallow the first click of every interaction.
+    /// An accessory app is inactive almost all the time, which would make that most clicks.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+        Log.window.notice("mouseDown at \(event.locationInWindow.debugDescription, privacy: .public)")
         dragStartMouse = NSEvent.mouseLocation
         dragStartWindowOrigin = window.frame.origin
         isDragging = false
