@@ -62,29 +62,40 @@ enum SkinVerifier {
         }
     }
 
-    /// Reports the phrase book, and checks that every category the pet can ask for exists.
+    /// Reports the phrase book for every language, and flags any language that is missing a file or
+    /// a category.
     ///
     /// A missing category is not fatal — the pet falls back to `idle` — but it is worth flagging,
     /// because a typo in a `.json` key would otherwise only show up as "the pet never talks".
     private static func reportPhrases(from locator: AssetLocator) throws {
-        let book = try PhraseBook.loadDirectory(at: locator.phrasesDirectory)
+        let directory = locator.phrasesDirectory
+        print("Phrases: \(directory.path)")
 
-        if book.isEmpty {
-            print("Phrases: none found in \(locator.phrasesDirectory.path) — the pet will stay quiet")
-            return
+        let present = PhraseBook.availableLanguages(in: directory)
+        let missing = AppLanguage.allCases.filter { !present.contains($0) }
+
+        if !present.isEmpty {
+            print("  files: \(present.map(\.rawValue).joined(separator: ", "))")
         }
-
-        print("Phrases: \(locator.phrasesDirectory.path)")
-        for category in book.allCategories {
-            print("  \(category): \(book.phrases(for: category).count) phrase(s)")
-        }
-
-        let missing = SpeechEvent.allCases
-            .map(\.rawValue)
-            .filter { book.isEmpty(for: $0) }
         if !missing.isEmpty {
-            print("  note: no phrases for \(missing.joined(separator: ", ")); "
-                + "those reactions will fall back to idle")
+            print("  note: no phrase file for \(missing.map(\.rawValue).joined(separator: ", ")); "
+                + "the pet stays quiet in those languages")
+        }
+
+        for language in present {
+            let book = try PhraseBook.load(language: language, from: directory)
+            let counts = book.allCategories
+                .map { "\($0) \(book.phrases(for: $0).count)" }
+                .joined(separator: ", ")
+            print("  \(language.rawValue): \(counts)")
+
+            let absent = SpeechEvent.allCases
+                .map(\.rawValue)
+                .filter { book.isEmpty(for: $0) }
+            if !absent.isEmpty {
+                print("     note: nothing for \(absent.joined(separator: ", ")); "
+                    + "those reactions fall back to idle")
+            }
         }
     }
 

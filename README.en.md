@@ -26,6 +26,9 @@ The menu language follows your system language until you toggle it (`zh*` → Ch
 English), and your choice is remembered. The language toggle lives in the left-click menu (and the
 menu-bar item); right-click was given to the skin picker.
 
+**Switching language changes both the menu and what the pet says** — there is one phrase file per
+language, see below.
+
 ### Why there is also a menu-bar icon
 
 Every control the pet has hangs off a **sprite you have to click**, which is a single point of
@@ -208,21 +211,33 @@ which a pixel counts as clickable.
 `row` and `frames` are **not** written by hand — the packer fills them in and writes
 `build/skin.json`.
 
-### Phrase files
+### Phrase files (one per language)
 
-`Resources/Phrases/*.json` is a flat object of category to phrases. Files are merged, so you can
-add as many as you like:
+```
+Resources/Phrases/
+  zh.json     Chinese lines
+  en.json     English lines
+```
+
+**The filename is the language code**, and the pet's lines follow the menu language — switch to
+English and the menu and the lines change together. (Otherwise you get an English menu over a pet
+still speaking Chinese.)
+
+Each file is a flat object of category to phrases:
 
 ```json
 {
-  "click": ["hey!"],
-  "idle":  ["..."],
-  "drag":  ["put me down"],
-  "sleep": ["zzz"]
+  "click": ["Hey, stop poking me!"],
+  "idle":  ["Nice weather today."],
+  "drag":  ["Put me down!"],
+  "sleep": ["Zzz..."]
 }
 ```
 
-Categories fall back to `idle`, and a malformed file makes the pet go quiet rather than crash.
+- A missing category falls back to `idle`
+- **A missing language file** means the pet stays quiet in that language; the app still runs
+- **A malformed file** silences the pet and logs the error; it does not crash
+- To add a third language: add a case to `AppLanguage`, a `MenuStrings` entry, and a `<code>.json`
 
 ## Commands
 

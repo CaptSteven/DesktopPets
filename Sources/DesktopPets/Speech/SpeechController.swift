@@ -17,7 +17,6 @@ final class SpeechController {
     private let bubble = SpeechBubbleWindow()
     private var book: PhraseBook
     private var rng = SystemRandomNumberGenerator()
-
     private var visibleFor: Double = 0
     private var currentText: String?
     private var timeUntilIdleLine: Double
@@ -39,6 +38,16 @@ final class SpeechController {
     func setEnabled(_ enabled: Bool) {
         config.isSpeechEnabled = enabled
         if !enabled { dismiss() }
+    }
+
+    /// Swaps in the phrase book for a newly selected language.
+    ///
+    /// Called on every language switch: the menu and the pet's lines have to change together, or
+    /// you get an English menu with a pet still speaking Chinese.
+    func usePhraseBook(_ book: PhraseBook) {
+        self.book = book
+        dismiss()
+        timeUntilIdleLine = Double.random(in: Self.idleInterval)
     }
 
     /// Reacts to something that happened to the pet. Silent when speech is off, or when the phrase

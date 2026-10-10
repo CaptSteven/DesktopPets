@@ -1,0 +1,27 @@
+{
+  "click": [
+    "Hey, stop poking me!",
+    "What is it?",
+    "I'm here, I'm here.",
+    "That tickles..."
+  ],
+  "idle": [
+    "Nice weather today.",
+    "Should we take a break?",
+    "Just stretching my legs.",
+    "Rumble rumble...",
+    "What are you working on?",
+    "Getting a bit bored."
+  ],
+  "drag": [
+    "Put me down!",
+    "Whoa— whoa—",
+    "Stop swinging me around.",
+    "I'm getting dizzy..."
+  ],
+  "sleep": [
+    "Zzz...",
+    "Sleepy. Napping for a bit.",
+    "Zzz... zzz..."
+  ]
+}

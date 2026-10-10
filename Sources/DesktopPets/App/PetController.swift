@@ -64,7 +64,10 @@ final class PetController {
             clickDuration: skin.animations["click"]?.duration ?? 0
         )
 
-        speech = SpeechController(config: config, book: Self.loadPhrases(from: locator))
+        speech = SpeechController(
+            config: config,
+            book: Self.loadPhrases(from: locator, language: config.language)
+        )
 
         hotspot = Self.initialHotspot(
             anchor: skin.manifest.anchor,
@@ -242,6 +245,11 @@ final class PetController {
     private func switchLanguage() {
         let language = config.toggleLanguage()
         refreshMenu()
+
+        // The menu and the pet's lines have to change together. An English menu over a pet still
+        // speaking Chinese is exactly the mismatch this fixes.
+        speech.usePhraseBook(Self.loadPhrases(from: locator, language: language))
+
         speech.announce(
             language.switchAnnouncement,
             petFrame: window.frame,
@@ -371,13 +379,13 @@ final class PetController {
         statusItem.update(items: menuItems) { [weak self] command in self?.perform(command) }
     }
 
-    /// Reads `Resources/Phrases/*.json`. A malformed file leaves the pet silent rather than
-    /// stopping it from running.
-    private static func loadPhrases(from locator: AssetLocator) -> PhraseBook {
+    /// Reads the phrase file for a language. A malformed file leaves the pet silent rather than
+    /// stopping it from running; a missing one just means it has nothing to say in that language.
+    private static func loadPhrases(from locator: AssetLocator, language: AppLanguage) -> PhraseBook {
         do {
-            return try PhraseBook.loadDirectory(at: locator.phrasesDirectory)
+            return try PhraseBook.load(language: language, from: locator.phrasesDirectory)
         } catch {
-            Log.warning("Could not read phrases (\(error)); the pet will stay quiet")
+            Log.warning("Could not read \(language.rawValue) phrases (\(error)); the pet will stay quiet")
             return PhraseBook()
         }
     }

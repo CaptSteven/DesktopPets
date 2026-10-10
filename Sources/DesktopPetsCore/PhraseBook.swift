@@ -60,25 +60,37 @@ public struct PhraseBook {
         return try decode(from: data, path: url.path)
     }
 
-    /// Merges every `*.json` in a directory. Files are read in sorted order so the result is
-    /// deterministic, and categories present in several files are concatenated.
-    public static func loadDirectory(at url: URL, fileManager: FileManager = .default) throws -> PhraseBook {
-        let entries: [URL]
-        do {
-            entries = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
-        } catch {
-            // A missing Phrases directory just means the pet stays quiet.
-            return PhraseBook()
-        }
+    /// Loads the phrase file for one language: `<directory>/<code>.json`, e.g. `zh.json`.
+    ///
+    /// One file per language rather than one merged pile, so the pet's lines follow the menu
+    /// language instead of always speaking whichever language happened to be authored first.
+    ///
+    /// A missing file is not an error — it just leaves the pet quiet in that language. A file that
+    /// exists but is malformed *does* throw, so a typo is not silently ignored.
+    public static func load(
+        language: AppLanguage,
+        from directory: URL,
+        fileManager: FileManager = .default
+    ) throws -> PhraseBook {
+        let url = fileURL(for: language, in: directory)
+        guard fileManager.fileExists(atPath: url.path) else { return PhraseBook() }
+        return try load(from: url)
+    }
 
-        var merged: PhraseBook = PhraseBook()
-        for file in entries.filter({ $0.pathExtension.lowercased() == "json" }).sorted(by: { $0.path < $1.path }) {
-            let book = try load(from: file)
-            for (category, phrases) in book.categories {
-                merged.categories[category] = sanitize((merged.categories[category] ?? []) + phrases)
-            }
+    /// Where `language`'s phrases live.
+    public static func fileURL(for language: AppLanguage, in directory: URL) -> URL {
+        directory.appendingPathComponent("\(language.rawValue).json")
+    }
+
+    /// Languages that actually have a phrase file, in declaration order. Used to report what the
+    /// app found, and to catch a language that was forgotten when adding a new one.
+    public static func availableLanguages(
+        in directory: URL,
+        fileManager: FileManager = .default
+    ) -> [AppLanguage] {
+        AppLanguage.allCases.filter { language in
+            fileManager.fileExists(atPath: fileURL(for: language, in: directory).path)
         }
-        return merged
     }
 
     // MARK: Lookup

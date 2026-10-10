@@ -38,30 +38,88 @@ import Testing
         #expect(path == "/tmp/phrases.json")
     }
 
-    @Test func loadDirectoryMergesEveryJSONFileInSortedOrder() throws {
+    @Test func loadsOnlyTheRequestedLanguage() throws {
         let temp = try TempDirectory()
-        try temp.write("b-more.json", #"{ "idle": ["second"], "click": ["from-b"] }"#)
-        try temp.write("a-first.json", #"{ "idle": ["first"], "click": ["from-a"] }"#)
-        // Non-JSON files are ignored rather than choking the loader.
+        try temp.write("zh.json", #"{ "idle": ["你好"], "click": ["别戳我"] }"#)
+        try temp.write("en.json", #"{ "idle": ["hello"], "click": ["stop poking me"] }"#)
+        // A stray file must not be merged in: one file per language is the whole point.
         try temp.write("notes.txt", "not json at all")
 
-        let book = try PhraseBook.loadDirectory(at: temp.url)
+        let zh = try PhraseBook.load(language: .chinese, from: temp.url)
+        let en = try PhraseBook.load(language: .english, from: temp.url)
 
-        #expect(book.phrases(for: "idle") == ["first", "second"])
-        #expect(book.phrases(for: "click") == ["from-a", "from-b"])
+        #expect(zh.phrases(for: "idle") == ["你好"])
+        #expect(en.phrases(for: "idle") == ["hello"])
     }
 
-    @Test func loadDirectoryOnAMissingDirectoryYieldsAnEmptyBook() throws {
-        let missing = URL(fileURLWithPath: "/definitely/not/a/phrases/dir")
-        #expect(try PhraseBook.loadDirectory(at: missing).isEmpty)
-    }
-
-    @Test func loadDirectoryPropagatesABrokenFileSoTyposAreNotSilent() throws {
+    @Test func aMissingLanguageFileYieldsAnEmptyBookRatherThanFailing() throws {
         let temp = try TempDirectory()
-        try temp.write("broken.json", "{ oops")
+        try temp.write("zh.json", #"{ "idle": ["你好"] }"#)
 
+        // English was never authored: the pet should just be quiet in English, not refuse to start.
+        #expect(try PhraseBook.load(language: .english, from: temp.url).isEmpty)
+    }
+
+    @Test func aMissingDirectoryYieldsAnEmptyBook() throws {
+        let missing = URL(fileURLWithPath: "/definitely/not/a/phrases/dir")
+        #expect(try PhraseBook.load(language: .chinese, from: missing).isEmpty)
+    }
+
+    @Test func aBrokenLanguageFileIsNotSilentlyIgnored() throws {
+        let temp = try TempDirectory()
+        try temp.write("zh.json", "{ oops")
+
+        // A malformed file is a typo to fix, not something to paper over.
         #expect(throws: PhraseBookError.self) {
-            try PhraseBook.loadDirectory(at: temp.url)
+            try PhraseBook.load(language: .chinese, from: temp.url)
+        }
+    }
+
+    @Test func fileURLUsesTheLanguageCode() {
+        let directory = URL(fileURLWithPath: "/r/Phrases")
+        #expect(PhraseBook.fileURL(for: .chinese, in: directory).path == "/r/Phrases/zh.json")
+        #expect(PhraseBook.fileURL(for: .english, in: directory).path == "/r/Phrases/en.json")
+    }
+
+    @Test func availableLanguagesReportsOnlyTheFilesThatExist() throws {
+        let temp = try TempDirectory()
+
+        // Nothing authored yet.
+        #expect(PhraseBook.availableLanguages(in: temp.url).isEmpty)
+
+        try temp.write("zh.json", "{}")
+        #expect(PhraseBook.availableLanguages(in: temp.url) == [.chinese])
+
+        try temp.write("en.json", "{}")
+        #expect(PhraseBook.availableLanguages(in: temp.url) == [.chinese, .english])
+    }
+
+    @Test func everyLanguageHasTheSameCategoriesInTheShippedFiles() throws {
+        // Both languages ship with the app, so they have to stay in step. If one is missing a
+        // category, those reactions silently fall back to idle *in that language only* — the kind
+        // of gap nobody notices until someone switches.
+        let root = try #require(
+            AssetLocator.sourceTreeResourcesRoot(),
+            "Resources is missing from the source tree"
+        )
+        let directory = root.appendingPathComponent("Phrases", isDirectory: true)
+
+        let present = PhraseBook.availableLanguages(in: directory)
+        #expect(Set(present) == Set(AppLanguage.allCases),
+                "every language needs a phrase file; found \(present.map(\.rawValue))")
+
+        let books = try present.map { try PhraseBook.load(language: $0, from: directory) }
+
+        for (language, book) in zip(present, books) {
+            let categories = Set(book.allCategories)
+            #expect(categories == Set(books[0].allCategories),
+                    "\(language.rawValue) has different categories from \(present[0].rawValue)")
+
+            // And every category the pet can actually ask for must be present.
+            for event in SpeechEvent.allCases {
+                #expect(!book.isEmpty(for: event.rawValue),
+                        "\(language.rawValue) has no \(event.rawValue) phrases")
+            }
         }
     }
 
