@@ -59,6 +59,7 @@ final class PetMenuController {
               let command = view.items[index].command
         else { return }
 
+        Log.window.notice("menu selected \(command.identifier, privacy: .public)")
         let handler = onCommand
         close()
         handler?(command)

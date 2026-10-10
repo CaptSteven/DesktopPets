@@ -108,7 +108,12 @@ final class PetMenuPanelView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let local = convert(event.locationInWindow, from: nil)
-        guard let index = metrics.itemIndex(atOffsetFromTop: local.y, in: items) else { return }
+        let index = metrics.itemIndex(atOffsetFromTop: local.y, in: items)
+        // Logged because a mis-clicked menu row is otherwise invisible: the panel just closes and
+        // nothing appears to have happened.
+        let row = index.map(String.init) ?? "none"
+        Log.window.notice("menu click at y=\(local.y, privacy: .public) -> row \(row, privacy: .public)")
+        guard let index else { return }
         onSelect?(index)
     }
 

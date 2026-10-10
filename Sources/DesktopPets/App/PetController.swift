@@ -210,7 +210,7 @@ final class PetController {
     /// route to Quit is how the pet became impossible to close.
     private func showMenu(at point: CGPoint) {
         menuController.show(
-            items: menuItems,
+            items: actionItems,
             at: point,
             within: ScreenMapping.visibleFrame(nearest: hotspot),
             onCommand: { [weak self] command in self?.perform(command) }
@@ -248,7 +248,12 @@ final class PetController {
 
         // The menu and the pet's lines have to change together. An English menu over a pet still
         // speaking Chinese is exactly the mismatch this fixes.
-        speech.usePhraseBook(Self.loadPhrases(from: locator, language: language))
+        let book = Self.loadPhrases(from: locator, language: language)
+        speech.usePhraseBook(book)
+
+        // Logged so the language -> phrase-book link is checkable rather than merely asserted.
+        let categories = book.allCategories.count
+        Log.app.notice("language -> \(language.rawValue, privacy: .public), \(categories, privacy: .public) phrase categories loaded")
 
         speech.announce(
             language.switchAnnouncement,
@@ -363,10 +368,19 @@ final class PetController {
     /// it up without restarting.
     private var installedSkins: [String] { locator.availableSkins() }
 
-    /// The full menu, rebuilt on demand so it always reflects the current language, skin and
-    /// settings. The menu-bar item carries the skin list too, since it has no right-click of its
-    /// own to hang a picker on.
-    private var menuItems: [MenuItem] {
+    /// The pet's own menu: actions only. Picking a skin lives behind right-click, so this stays
+    /// short no matter how many skins are installed.
+    private var actionItems: [MenuItem] {
+        PetMenuModel.items(
+            strings: menuStrings,
+            skinName: skin.name,
+            speechEnabled: speech.isEnabled
+        )
+    }
+
+    /// The menu-bar item carries the skins too, because it has no right-click of its own to hang a
+    /// picker on.
+    private var menuBarItems: [MenuItem] {
         PetMenuModel.menuBarItems(
             strings: menuStrings,
             skinName: skin.name,
@@ -376,7 +390,7 @@ final class PetController {
     }
 
     private func refreshMenu() {
-        statusItem.update(items: menuItems) { [weak self] command in self?.perform(command) }
+        statusItem.update(items: menuBarItems) { [weak self] command in self?.perform(command) }
     }
 
     /// Reads the phrase file for a language. A malformed file leaves the pet silent rather than
