@@ -26,7 +26,16 @@ public final class ConfigStore {
 
     private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
+    /// A fixed suite name, so the app behaves identically whether it runs from a bundle or from
+    /// `swift run`.
+    ///
+    /// `UserDefaults.standard` resolves its domain from the main bundle's identifier. A bundle has
+    /// one; a plain `swift run` executable does not, and silently lands somewhere else. That means
+    /// the skin, position and language you set while developing would not carry over to the built
+    /// `.app` — a confusing way to lose an afternoon.
+    public static let suiteName = "com.desktoppets.DesktopPets"
+
+    public init(defaults: UserDefaults = UserDefaults(suiteName: ConfigStore.suiteName) ?? .standard) {
         self.defaults = defaults
     }
 

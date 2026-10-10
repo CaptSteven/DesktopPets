@@ -174,8 +174,9 @@ import Testing
 
     @Test func availableSkinsListsDirectoriesSorted() throws {
         let temp = try TempDirectory()
-        try temp.makeDirectory("Resources/Skins/zebra")
-        try temp.makeDirectory("Resources/Skins/alpaca")
+        try makeSkin(in: temp, at: "Resources/Skins/zebra")
+        try makeSkin(in: temp, at: "Resources/Skins/alpaca")
+
         // Files are not skins, and neither are hidden directories.
         try temp.write("Resources/Skins/notes.txt", "not a skin")
         try temp.makeDirectory("Resources/Skins/.git")
@@ -188,11 +189,126 @@ import Testing
         #expect(locator.availableSkins() == ["alpaca", "zebra"])
     }
 
+    @Test func aDirectoryWithoutAManifestIsNotASkin() throws {
+        let temp = try TempDirectory()
+        try makeSkin(in: temp, at: "Resources/Skins/cat")
+        // A grouping folder, or someone's scratch space: no skin.json, so not a skin.
+        try temp.makeDirectory("Resources/Skins/scratch")
+
+        let locator = AssetLocator(
+            resourcesRoot: temp.url.appendingPathComponent("Resources"),
+            source: .sourceTree
+        )
+
+        #expect(locator.availableSkins() == ["cat"])
+    }
+
+    @Test func groupedVariantsOneLevelDeepAreListedByPath() throws {
+        // How variants of one character are organised:
+        //   Skins/cat/v1/skin.json  -> "cat/v1"
+        //   Skins/cat/v2/skin.json  -> "cat/v2"
+        let temp = try TempDirectory()
+        try makeSkin(in: temp, at: "Resources/Skins/cat/v1")
+        try makeSkin(in: temp, at: "Resources/Skins/cat/v2")
+        try makeSkin(in: temp, at: "Resources/Skins/dog")
+        // Reference art alongside the variants must not be mistaken for a skin.
+        try temp.makeDirectory("Resources/Skins/cat/reference")
+
+        let locator = AssetLocator(
+            resourcesRoot: temp.url.appendingPathComponent("Resources"),
+            source: .sourceTree
+        )
+
+        #expect(locator.availableSkins() == ["cat/v1", "cat/v2", "dog"])
+    }
+
+    @Test func aGroupCanBeBothASkinAndAGroup() throws {
+        // A character that has both a finished skin and per-version folders.
+        let temp = try TempDirectory()
+        try makeSkin(in: temp, at: "Resources/Skins/cat")
+        try makeSkin(in: temp, at: "Resources/Skins/cat/v1")
+
+        let locator = AssetLocator(
+            resourcesRoot: temp.url.appendingPathComponent("Resources"),
+            source: .sourceTree
+        )
+
+        #expect(locator.availableSkins() == ["cat", "cat/v1"])
+    }
+
+    @Test func nestingDeeperThanOneLevelIsNotWalked() throws {
+        // Deliberate limit: identifiers have to stay short enough to read in a menu.
+        let temp = try TempDirectory()
+        try makeSkin(in: temp, at: "Resources/Skins/cat/v1/final")
+
+        let locator = AssetLocator(
+            resourcesRoot: temp.url.appendingPathComponent("Resources"),
+            source: .sourceTree
+        )
+
+        #expect(locator.availableSkins().isEmpty)
+    }
+
+    @Test func packerOutputIsNotMistakenForASkin() throws {
+        // The packer writes its own skin.json into build/. Without an explicit exclusion it shows up
+        // in the skin picker as a separate entry, but only *after* you have packed something.
+        let temp = try TempDirectory()
+        try makeSkin(in: temp, at: "Resources/Skins/cat")
+        try temp.write("Resources/Skins/cat/build/skin.json", #"{ "name": "packed" }"#)
+        try temp.makeDirectory("Resources/Skins/cat/preview")
+
+        let locator = AssetLocator(
+            resourcesRoot: temp.url.appendingPathComponent("Resources"),
+            source: .sourceTree
+        )
+
+        #expect(locator.availableSkins() == ["cat"])
+    }
+
+    @Test func reservedNamesAreExcludedAtTheTopLevelToo() throws {
+        let temp = try TempDirectory()
+        try makeSkin(in: temp, at: "Resources/Skins/build")
+        try makeSkin(in: temp, at: "Resources/Skins/cat")
+
+        let locator = AssetLocator(
+            resourcesRoot: temp.url.appendingPathComponent("Resources"),
+            source: .sourceTree
+        )
+
+        #expect(locator.availableSkins() == ["cat"])
+    }
+
+    @Test func reservedNameMatchingIsCaseInsensitive() {
+        #expect(AssetLocator.isReservedDirectoryName("build"))
+        #expect(AssetLocator.isReservedDirectoryName("Build"))
+        #expect(AssetLocator.isReservedDirectoryName("PREVIEW"))
+        #expect(!AssetLocator.isReservedDirectoryName("cat"))
+    }
+
+    @Test func nestedSkinPathsResolveToTheRightDirectories() throws {
+        let temp = try TempDirectory()
+        let resources = temp.url.appendingPathComponent("Resources")
+        let locator = AssetLocator(resourcesRoot: resources, source: .sourceTree)
+
+        // A slash in the identifier has to reach through to the nested folder.
+        #expect(locator.skinDirectory(named: "cat/v1").path
+            == resources.appendingPathComponent("Skins/cat/v1").path)
+        #expect(locator.sourceManifestURL(inSkin: "cat/v1").path
+            == resources.appendingPathComponent("Skins/cat/v1/skin.json").path)
+        #expect(locator.sourceFramesDirectory(inSkin: "cat/v1", state: "idle").path
+            == resources.appendingPathComponent("Skins/cat/v1/src/idle").path)
+    }
+
     @Test func availableSkinsIsEmptyWhenSkinsIsMissing() throws {
         let temp = try TempDirectory()
         let locator = AssetLocator(resourcesRoot: temp.url, source: .sourceTree)
 
         #expect(locator.availableSkins().isEmpty)
+    }
+
+    /// Creates a directory that passes as a skin: a folder containing a `skin.json`.
+    private func makeSkin(in temp: TempDirectory, at path: String) throws {
+        try temp.write("\(path)/skin.json", "{}")
     }
 
     // MARK: Helpers

@@ -40,6 +40,8 @@ import Testing
 
             for (label, value) in [
                 ("skinFormat", strings.skinFormat),
+                ("skinPickerTitle", strings.skinPickerTitle),
+                ("noSkinsFound", strings.noSkinsFound),
                 ("speak", strings.speak),
                 ("switchLanguage", strings.switchLanguage),
                 ("reload", strings.reload),

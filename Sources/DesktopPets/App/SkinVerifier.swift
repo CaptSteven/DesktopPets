@@ -21,7 +21,12 @@ enum SkinVerifier {
             let available = locator.availableSkins()
             print("Skins: \(available.isEmpty ? "<none>" : available.joined(separator: ", "))")
 
-            guard let name = available.first else {
+            // Use the same choice the app would make, so this verifies what you are actually about
+            // to see rather than just the first folder on disk.
+            let config = ConfigStore()
+            print("Configured skin: \(config.skinName ?? "<unset>")")
+
+            guard let name = SpriteSource.resolveSkinName(config: config, locator: locator) else {
                 throw SpriteSourceError.noSkinsFound(locator.skinsDirectory)
             }
 
@@ -46,7 +51,7 @@ enum SkinVerifier {
             }
 
             try reportPhrases(from: locator)
-            reportMenu(config: ConfigStore())
+            reportMenu(config: config)
 
             print("OK")
             exit(0)
@@ -113,10 +118,10 @@ enum SkinVerifier {
             return "# \(title)"
         case .separator:
             return "---"
-        case .action(let action, let title):
-            return "\(title)   [\(action.rawValue)]"
-        case .toggle(let action, let title, let isOn):
-            return "[\(isOn ? "x" : " ")] \(title)   [\(action.rawValue)]"
+        case .action(let command, let title):
+            return "\(title)   [\(command.identifier)]"
+        case .toggle(let command, let title, let isOn):
+            return "[\(isOn ? "x" : " ")] \(title)   [\(command.identifier)]"
         }
     }
 

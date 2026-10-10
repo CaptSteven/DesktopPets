@@ -35,6 +35,10 @@ public enum AppLanguage: String, Codable, CaseIterable, Equatable {
 public struct MenuStrings: Equatable {
     /// Format for the disabled header row. `%@` is the skin name.
     public let skinFormat: String
+    /// Heading above the list of installed skins.
+    public let skinPickerTitle: String
+    /// Shown in the picker when `Resources/Skins` has nothing usable in it.
+    public let noSkinsFound: String
     public let speak: String
     /// Names the language it switches *to*, so the row is unambiguous without needing a checkmark.
     public let switchLanguage: String
@@ -51,6 +55,8 @@ public struct MenuStrings: Equatable {
         case .chinese:
             return MenuStrings(
                 skinFormat: "皮肤：%@",
+                skinPickerTitle: "选择皮肤",
+                noSkinsFound: "没有找到皮肤",
                 speak: "说话",
                 switchLanguage: "切换语言：English",
                 reload: "重新载入皮肤与台词",
@@ -60,6 +66,8 @@ public struct MenuStrings: Equatable {
         case .english:
             return MenuStrings(
                 skinFormat: "Skin: %@",
+                skinPickerTitle: "Choose Skin",
+                noSkinsFound: "No skins found",
                 speak: "Speak",
                 switchLanguage: "Switch language: 中文",
                 reload: "Reload Skin and Phrases",

@@ -35,6 +35,9 @@ final class PetController {
 
     /// Set by the app delegate, which rebuilds the controller to pick up new or edited art.
     var onReloadRequested: (() -> Void)?
+    /// Set by the app delegate. Rebuilding is the cleanest way to change skin: it re-reads the
+    /// manifest, the frames and the phrases, and the window is resized to the new frame size.
+    var onSkinChangeRequested: ((String) -> Void)?
 
     init(locator: AssetLocator, config: ConfigStore, skin: LoadedSkin) {
         self.locator = locator
@@ -179,9 +182,21 @@ final class PetController {
         showMenu(at: NSEvent.mouseLocation)
     }
 
-    /// Right-click: flip the menu language, and say so in the new language.
+    /// Right-click: pick a different skin.
+    ///
+    /// The language toggle used to live here; it is in the menu and the menu-bar item, so giving
+    /// right-click to the skin picker does not lose anything.
     private func handleRightClick() {
-        switchLanguage()
+        menuController.show(
+            items: PetMenuModel.skinPickerItems(
+                strings: menuStrings,
+                skins: installedSkins,
+                currentSkin: skin.name
+            ),
+            at: NSEvent.mouseLocation,
+            within: ScreenMapping.visibleFrame(nearest: hotspot),
+            onCommand: { [weak self] command in self?.perform(command) }
+        )
     }
 
     /// Opens the pet's menu with its top-left corner at `point`.
@@ -195,19 +210,29 @@ final class PetController {
             items: menuItems,
             at: point,
             within: ScreenMapping.visibleFrame(nearest: hotspot),
-            onAction: { [weak self] action in self?.perform(action) }
+            onCommand: { [weak self] command in self?.perform(command) }
         )
     }
 
-    /// Dispatches a menu choice, wherever it came from: the pet's panel or the menu-bar item.
-    private func perform(_ action: MenuAction) {
-        switch action {
+    /// Dispatches a menu choice, wherever it came from: a panel or the menu-bar item.
+    private func perform(_ command: MenuCommand) {
+        switch command {
         case .toggleSpeech: toggleSpeech(nil)
         case .switchLanguage: switchLanguage()
         case .reload: reloadSkin(nil)
         case .resetPosition: resetPosition(nil)
         case .quit: quit(nil)
+        case .selectSkin(let name): selectSkin(named: name)
         }
+    }
+
+    /// Switches skins by rebuilding the controller, which re-reads the manifest, the frames and
+    /// the phrases, and resizes the window to the new frame size.
+    private func selectSkin(named name: String) {
+        guard name != skin.name else { return }
+        persistPosition()
+        config.skinName = name
+        onSkinChangeRequested?(name)
     }
 
     /// Flips the menu language and announces it in the new one.
@@ -324,20 +349,26 @@ final class PetController {
         }
     }
 
-    /// The menu description, rebuilt on demand so it always reflects the current language, skin and
-    /// settings.
+    private var menuStrings: MenuStrings { MenuStrings.forLanguage(config.language) }
+
+    /// Installed skins, read fresh each time so dropping a new folder in and hitting Reload picks
+    /// it up without restarting.
+    private var installedSkins: [String] { locator.availableSkins() }
+
+    /// The full menu, rebuilt on demand so it always reflects the current language, skin and
+    /// settings. The menu-bar item carries the skin list too, since it has no right-click of its
+    /// own to hang a picker on.
     private var menuItems: [MenuItem] {
-        PetMenuModel.items(
-            strings: MenuStrings.forLanguage(config.language),
+        PetMenuModel.menuBarItems(
+            strings: menuStrings,
             skinName: skin.name,
+            skins: installedSkins,
             speechEnabled: speech.isEnabled
         )
     }
 
-    /// Pushes the menu to the menu-bar item. The pet's panel reads `menuItems` directly when it
-    /// opens, and both are built from the same description so they cannot drift apart.
     private func refreshMenu() {
-        statusItem.update(items: menuItems) { [weak self] action in self?.perform(action) }
+        statusItem.update(items: menuItems) { [weak self] command in self?.perform(command) }
     }
 
     /// Reads `Resources/Phrases/*.json`. A malformed file leaves the pet silent rather than

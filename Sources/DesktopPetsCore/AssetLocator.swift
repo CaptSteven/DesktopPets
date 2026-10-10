@@ -67,10 +67,20 @@ public struct AssetLocator: Equatable {
         skinDirectory(named: name).appendingPathComponent("preview", isDirectory: true)
     }
 
-    /// Names of the skin directories available under `Skins/`, sorted for a stable default choice.
+    /// Identifiers of the skins available under `Skins/`, sorted for a stable default choice.
     ///
-    /// A usable skin is any subdirectory; whether it actually loads is decided when parsing its
-    /// manifest, so a broken skin reports a specific error rather than vanishing from the list.
+    /// A directory counts as a skin only if it actually contains a `skin.json`. That is what lets a
+    /// directory be a plain *grouping* folder rather than a skin, which is how variants are
+    /// organised:
+    ///
+    ///     Skins/cat/skin.json       -> "cat"
+    ///     Skins/cat/v1/skin.json    -> "cat/v1"
+    ///     Skins/cat/v2/skin.json    -> "cat/v2"
+    ///     Skins/cat/reference/      -> ignored (no skin.json in it)
+    ///
+    /// A folder may be both a skin and a group, so the rule is simply "anything holding a
+    /// `skin.json`, here or one level down, appears in the menu". Exactly one level is walked;
+    /// deeper trees are left alone so identifiers stay short enough to read.
     public func availableSkins(fileManager: FileManager = .default) -> [String] {
         let entries: [URL]
         do {
@@ -83,15 +93,60 @@ public struct AssetLocator: Equatable {
             return []
         }
 
-        return entries.compactMap { url -> String? in
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                  isDirectory.boolValue
-            else { return nil }
-            let name = url.lastPathComponent
-            return name.hasPrefix(".") ? nil : name
+        var found: [String] = []
+
+        for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let name = entry.lastPathComponent
+            guard !name.hasPrefix("."),
+                  !Self.isReservedDirectoryName(name),
+                  isDirectory(entry, fileManager: fileManager)
+            else { continue }
+
+            if hasManifest(in: entry, fileManager: fileManager) {
+                found.append(name)
+            }
+
+            // Look one level down as well, so a folder can be both a finished skin and a group of
+            // variants. `src/`, `build/` and friends have no skin.json, so they are never picked up.
+            guard let children = try? fileManager.contentsOfDirectory(
+                at: entry,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                let childName = child.lastPathComponent
+                guard !childName.hasPrefix("."),
+                      !Self.isReservedDirectoryName(childName),
+                      isDirectory(child, fileManager: fileManager),
+                      hasManifest(in: child, fileManager: fileManager)
+                else { continue }
+                found.append("\(name)/\(childName)")
+            }
         }
-        .sorted()
+
+        return found
+    }
+
+    private func hasManifest(in directory: URL, fileManager: FileManager) -> Bool {
+        // The packer writes `build/skin.json` inside a skin. Without this check it would be
+        // discovered as a skin in its own right, which is the kind of thing that only shows up in
+        // the menu once you have already packed something.
+        guard !Self.isReservedDirectoryName(directory.lastPathComponent) else { return false }
+        return fileManager.fileExists(atPath: directory.appendingPathComponent("skin.json").path)
+    }
+
+    /// Directory names the packer owns. They hold derived output, never hand-authored art.
+    public static let reservedDirectoryNames: Set<String> = ["build", "preview"]
+
+    static func isReservedDirectoryName(_ name: String) -> Bool {
+        reservedDirectoryNames.contains(name.lowercased())
+    }
+
+    private func isDirectory(_ url: URL, fileManager: FileManager) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return false }
+        return isDirectory.boolValue
     }
 
     /// Frame directory for the pre-packing workflow: `Skins/<name>/src/<state>/*.png`.

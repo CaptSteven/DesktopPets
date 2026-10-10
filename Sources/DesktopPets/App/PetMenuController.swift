@@ -15,7 +15,7 @@ final class PetMenuController {
     private let view = PetMenuPanelView()
     private var globalMonitor: Any?
     private var autoCloseTimer: Timer?
-    private var onAction: ((MenuAction) -> Void)?
+    private var onCommand: ((MenuCommand) -> Void)?
 
     var isVisible: Bool { panel.isVisible }
 
@@ -29,9 +29,9 @@ final class PetMenuController {
         items: [MenuItem],
         at point: CGPoint,
         within visibleFrame: CGRect,
-        onAction: @escaping (MenuAction) -> Void
+        onCommand: @escaping (MenuCommand) -> Void
     ) {
-        self.onAction = onAction
+        self.onCommand = onCommand
         view.items = items
 
         let size = view.sizeThatFits()
@@ -56,12 +56,12 @@ final class PetMenuController {
 
     private func select(at index: Int) {
         guard view.items.indices.contains(index),
-              let action = view.items[index].action
+              let command = view.items[index].command
         else { return }
 
-        let handler = onAction
+        let handler = onCommand
         close()
-        handler?(action)
+        handler?(command)
     }
 
     // MARK: Dismissal

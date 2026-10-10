@@ -17,7 +17,6 @@ import ImageIO
 // MARK: - Configuration
 
 let frameSize = 64
-let skinName = "placeholder"
 
 /// Matches `SkinManifest.knownStates`. `click` is the one non-looping state.
 let states: [(name: String, fps: Double, loop: Bool, frames: Int)] = [
@@ -30,11 +29,45 @@ let states: [(name: String, fps: Double, loop: Bool, frames: Int)] = [
 
 // MARK: - Palette
 
-let bodyColour = CGColor(red: 0.95, green: 0.65, blue: 0.35, alpha: 1)
-let bellyColour = CGColor(red: 1.0, green: 0.85, blue: 0.70, alpha: 1)
-let earColour = CGColor(red: 0.88, green: 0.55, blue: 0.30, alpha: 1)
-let inkColour = CGColor(red: 0.23, green: 0.16, blue: 0.13, alpha: 1)
-let zColour = CGColor(red: 0.55, green: 0.60, blue: 0.65, alpha: 1)
+struct Palette {
+    let body: CGColor
+    let belly: CGColor
+    let accent: CGColor
+    let ink: CGColor
+    let z: CGColor
+}
+
+extension Palette {
+    static let ginger = Palette(
+        body: CGColor(red: 0.95, green: 0.65, blue: 0.35, alpha: 1),
+        belly: CGColor(red: 1.0, green: 0.85, blue: 0.70, alpha: 1),
+        accent: CGColor(red: 0.88, green: 0.55, blue: 0.30, alpha: 1),
+        ink: CGColor(red: 0.23, green: 0.16, blue: 0.13, alpha: 1),
+        z: CGColor(red: 0.55, green: 0.60, blue: 0.65, alpha: 1)
+    )
+
+    static let grey = Palette(
+        body: CGColor(red: 0.60, green: 0.64, blue: 0.72, alpha: 1),
+        belly: CGColor(red: 0.86, green: 0.89, blue: 0.94, alpha: 1),
+        accent: CGColor(red: 0.46, green: 0.50, blue: 0.58, alpha: 1),
+        ink: CGColor(red: 0.16, green: 0.18, blue: 0.24, alpha: 1),
+        z: CGColor(red: 0.80, green: 0.82, blue: 0.86, alpha: 1)
+    )
+}
+
+/// The example library this script writes.
+///
+/// Two layouts are demonstrated on purpose, because they are the two ways to organise art:
+///
+///   - `placeholder`       a skin at the top level of `Resources/Skins`
+///   - `placeholder/grey`  a *variant* of the same character, one level down
+///
+/// Both appear in the right-click skin picker. The framing is identical between them and only the
+/// palette differs, so a switch is obvious at a glance.
+let skins: [(identifier: String, palette: Palette)] = [
+    ("placeholder", .ginger),
+    ("placeholder/grey", .grey),
+]
 
 // MARK: - Pose
 
@@ -92,7 +125,7 @@ func fillEllipse(_ context: CGContext, centreX: Double, centreY: Double, width: 
     ))
 }
 
-func drawCritter(_ context: CGContext, pose: Pose) {
+func drawCritter(_ context: CGContext, pose: Pose, palette: Palette) {
     let centreX = Double(frameSize) / 2 + pose.sway
 
     // Body. Lying down squashes it and drops it towards the floor.
@@ -104,12 +137,12 @@ func drawCritter(_ context: CGContext, pose: Pose) {
 
     // Tail, off to one side so left/right facing is visible when the sprite is flipped.
     fillEllipse(context, centreX: centreX - bodyWidth / 2 - 2, centreY: bodyY - 2,
-                width: 14, height: 9, colour: earColour)
+                width: 14, height: 9, colour: palette.accent)
 
     // Ears, behind the body.
     for direction in [-1.0, 1.0] {
         let earX = centreX + direction * bodyWidth * 0.28
-        context.setFillColor(earColour)
+        context.setFillColor(palette.accent)
         context.move(to: CGPoint(x: earX - 6, y: bodyTop - 4))
         context.addLine(to: CGPoint(x: earX + direction * 1.5, y: bodyTop + (pose.lyingDown ? 4 : 12)))
         context.addLine(to: CGPoint(x: earX + 6, y: bodyTop - 4))
@@ -119,18 +152,18 @@ func drawCritter(_ context: CGContext, pose: Pose) {
 
     // Belly patch.
     fillEllipse(context, centreX: centreX, centreY: bodyY - bodyHeight * 0.12,
-                width: bodyWidth * 0.5, height: bodyHeight * 0.45, colour: bellyColour)
+                width: bodyWidth * 0.5, height: bodyHeight * 0.45, colour: palette.belly)
 
     // Body.
     fillEllipse(context, centreX: centreX, centreY: bodyY,
-                width: bodyWidth, height: bodyHeight, colour: bodyColour)
+                width: bodyWidth, height: bodyHeight, colour: palette.body)
 
     // Feet. Hidden while lying down, and lifted by the walk cycle.
     if !pose.lyingDown {
         fillEllipse(context, centreX: centreX - bodyWidth * 0.26, centreY: bodyY - bodyHeight / 2 + pose.leftFootLift,
-                    width: 11, height: 7, colour: earColour)
+                    width: 11, height: 7, colour: palette.accent)
         fillEllipse(context, centreX: centreX + bodyWidth * 0.26, centreY: bodyY - bodyHeight / 2 + pose.rightFootLift,
-                    width: 11, height: 7, colour: earColour)
+                    width: 11, height: 7, colour: palette.accent)
     }
 
     // Arms.
@@ -139,7 +172,7 @@ func drawCritter(_ context: CGContext, pose: Pose) {
             let armX = centreX + direction * (bodyWidth / 2 - 1)
             let armY = bodyY + bodyHeight * 0.1 + pose.armsUp * (bodyHeight * 0.42)
             fillEllipse(context, centreX: armX + direction * pose.armsUp * 3, centreY: armY,
-                        width: 8, height: 8, colour: bodyColour)
+                        width: 8, height: 8, colour: palette.body)
         }
     }
 
@@ -148,7 +181,7 @@ func drawCritter(_ context: CGContext, pose: Pose) {
     let eyeOffset = bodyWidth * 0.19
     if pose.eyeOpen < 0.15 {
         // Closed: a short horizontal stroke.
-        context.setStrokeColor(inkColour)
+        context.setStrokeColor(palette.ink)
         context.setLineWidth(1.8)
         context.setLineCap(.round)
         for direction in [-1.0, 1.0] {
@@ -161,18 +194,19 @@ func drawCritter(_ context: CGContext, pose: Pose) {
         let radius = 2.2 + 1.4 * pose.eyeOpen
         for direction in [-1.0, 1.0] {
             fillEllipse(context, centreX: centreX + direction * eyeOffset, centreY: eyeY,
-                        width: radius * 2, height: radius * 2, colour: inkColour)
+                        width: radius * 2, height: radius * 2, colour: palette.ink)
         }
     }
 
     // Sleeping z's.
     if let phase = pose.sleepZPhase {
-        drawSleepingZ(context, originX: centreX + bodyWidth * 0.35, originY: bodyTop + 2, size: 6 + phase * 4)
+        drawSleepingZ(context, originX: centreX + bodyWidth * 0.35, originY: bodyTop + 2,
+                      size: 6 + phase * 4, palette: palette)
     }
 
     // Surprise mark: a pair of vertical strokes above the head.
     if pose.surprise > 0.5 {
-        context.setStrokeColor(inkColour)
+        context.setStrokeColor(palette.ink)
         context.setLineWidth(2.4)
         context.setLineCap(.round)
         context.move(to: CGPoint(x: centreX + bodyWidth * 0.5, y: bodyTop + 4))
@@ -182,8 +216,8 @@ func drawCritter(_ context: CGContext, pose: Pose) {
 }
 
 /// A "Z" drawn from three strokes, so no font handling is needed.
-func drawSleepingZ(_ context: CGContext, originX: Double, originY: Double, size: Double) {
-    context.setStrokeColor(zColour)
+func drawSleepingZ(_ context: CGContext, originX: Double, originY: Double, size: Double, palette: Palette) {
+    context.setStrokeColor(palette.z)
     context.setLineWidth(1.8)
     context.setLineCap(.round)
     context.setLineJoin(.round)
@@ -278,7 +312,7 @@ func writePNG(_ image: CGImage, to url: URL) throws {
     }
 }
 
-func manifestJSON() -> String {
+func manifestJSON(name: String) -> String {
     let stateEntries = states.map { state -> String in
         """
               "\(state.name)": { "fps": \(state.fps), "loop": \(state.loop) }
@@ -287,7 +321,7 @@ func manifestJSON() -> String {
 
     return """
     {
-      "name": "\(skinName)",
+      "name": "\(name)",
       "frameSize": { "width": \(frameSize), "height": \(frameSize) },
       "scale": 2,
       "anchor": "bottomCenter",
@@ -300,11 +334,9 @@ func manifestJSON() -> String {
     """
 }
 
-func main() throws {
-    let repoRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-    let skinDirectory = repoRoot
-        .appendingPathComponent("Resources/Skins", isDirectory: true)
-        .appendingPathComponent(skinName, isDirectory: true)
+/// Writes one skin into `Resources/Skins/<identifier>`.
+func writeSkin(identifier: String, palette: Palette, into skinsRoot: URL) throws {
+    let skinDirectory = skinsRoot.appendingPathComponent(identifier, isDirectory: true)
 
     // Start from a clean slate so stale frames from an earlier run cannot linger.
     if FileManager.default.fileExists(atPath: skinDirectory.path) {
@@ -312,7 +344,10 @@ func main() throws {
     }
 
     try FileManager.default.createDirectory(at: skinDirectory, withIntermediateDirectories: true)
-    try Data(manifestJSON().utf8).write(to: skinDirectory.appendingPathComponent("skin.json"))
+    try Data(manifestJSON(name: identifier).utf8)
+        .write(to: skinDirectory.appendingPathComponent("skin.json"))
+
+    print("\(identifier)")
 
     for state in states {
         let directory = skinDirectory
@@ -322,7 +357,11 @@ func main() throws {
 
         for frame in 0..<state.frames {
             let context = makeContext()
-            drawCritter(context, pose: pose(for: state.name, frame: frame, of: state.frames))
+            drawCritter(
+                context,
+                pose: pose(for: state.name, frame: frame, of: state.frames),
+                palette: palette
+            )
 
             guard let image = context.makeImage() else {
                 fatalError("could not render \(state.name) frame \(frame)")
@@ -334,8 +373,18 @@ func main() throws {
         }
         print("  \(state.name): \(state.frames) frame(s)")
     }
+}
 
-    print("Wrote placeholder skin to \(skinDirectory.path)")
+func main() throws {
+    let repoRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    let skinsRoot = repoRoot.appendingPathComponent("Resources/Skins", isDirectory: true)
+
+    for skin in skins {
+        try writeSkin(identifier: skin.identifier, palette: skin.palette, into: skinsRoot)
+    }
+
+    print("\nWrote \(skins.count) skin(s) under \(skinsRoot.path)")
+    print("Both should appear in the pet's right-click skin picker.")
 }
 
 do {

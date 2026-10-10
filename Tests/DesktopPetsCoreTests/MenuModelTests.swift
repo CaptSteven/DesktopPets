@@ -8,15 +8,15 @@ import Testing
 
     // MARK: Structure
 
-    @Test func menuHasAHeaderAndEveryAction() {
+    @Test func menuHasAHeaderAndEveryCoreCommand() {
         let items = PetMenuModel.items(strings: english, skinName: "placeholder", speechEnabled: true)
 
         #expect(items.first == .header("Skin: placeholder"))
         #expect(items.contains(.separator))
 
-        let actions = items.compactMap(\.action)
-        #expect(Set(actions) == Set(MenuAction.allCases),
-                "every action must be reachable from the menu")
+        let commands = items.compactMap(\.command)
+        #expect(Set(commands) == Set(MenuCommand.core),
+                "every core command must be reachable from the menu")
     }
 
     @Test func bothLanguagesProduceTheSameStructure() {
@@ -28,7 +28,7 @@ import Testing
         #expect(zh.count == en.count)
 
         for (lhs, rhs) in zip(zh, en) {
-            #expect(lhs.action == rhs.action, "row order diverged: \(lhs) vs \(rhs)")
+            #expect(lhs.command == rhs.command, "row order diverged: \(lhs) vs \(rhs)")
             #expect((lhs.title == nil) == (rhs.title == nil))
             #expect(lhs.isOn == rhs.isOn)
             #expect(lhs.isSelectable == rhs.isSelectable)
@@ -57,8 +57,8 @@ import Testing
         let on = PetMenuModel.items(strings: english, skinName: "cat", speechEnabled: true)
         let off = PetMenuModel.items(strings: english, skinName: "cat", speechEnabled: false)
 
-        let onToggle = try #require(on.first { $0.action == .toggleSpeech })
-        let offToggle = try #require(off.first { $0.action == .toggleSpeech })
+        let onToggle = try #require(on.first { $0.command == .toggleSpeech })
+        let offToggle = try #require(off.first { $0.command == .toggleSpeech })
 
         #expect(onToggle.isOn)
         #expect(!offToggle.isOn)
@@ -87,7 +87,7 @@ import Testing
         let items = PetMenuModel.items(strings: english, skinName: "cat", speechEnabled: true)
         let selectable = PetMenuModel.selectableItems(in: items)
 
-        #expect(selectable.count == MenuAction.allCases.count)
+        #expect(selectable.count == MenuCommand.core.count)
         #expect(selectable.allSatisfy { $0.isSelectable })
     }
 
@@ -95,11 +95,99 @@ import Testing
         // The single most important row: without it there is no way out of the app.
         for strings in [chinese, english] {
             let items = PetMenuModel.items(strings: strings, skinName: "cat", speechEnabled: true)
-            #expect(items.contains { $0.action == .quit })
+            #expect(items.contains { $0.command == .quit })
 
-            let quit = items.first { $0.action == .quit }
+            let quit = items.first { $0.command == .quit }
             #expect(quit?.title?.isEmpty == false)
         }
+    }
+
+    // MARK: Skin picker
+
+    @Test func skinPickerListsEverySkinWithACheckmarkOnTheCurrent() {
+        let items = PetMenuModel.skinPickerItems(
+            strings: english,
+            skins: ["cat", "cat/v1", "dog"],
+            currentSkin: "cat/v1"
+        )
+
+        #expect(items.first == .header("Choose Skin"))
+
+        let rows = items.filter(\.isSelectable)
+        #expect(rows.count == 3)
+        #expect(rows.compactMap(\.title) == ["cat", "cat/v1", "dog"])
+
+        let checked = rows.filter(\.isOn)
+        #expect(checked.count == 1, "exactly one skin can be current")
+        #expect(checked.first?.command == .selectSkin("cat/v1"))
+    }
+
+    @Test func skinPickerRowsCarryTheSkinIdentifier() {
+        let items = PetMenuModel.skinPickerItems(
+            strings: english,
+            skins: ["cat/v1"],
+            currentSkin: "cat"
+        )
+
+        #expect(items.contains(.toggle(.selectSkin("cat/v1"), title: "cat/v1", isOn: false)))
+    }
+
+    @Test func skinPickerSaysSoWhenThereAreNoSkins() {
+        let items = PetMenuModel.skinPickerItems(strings: english, skins: [], currentSkin: "cat")
+
+        // Better than an empty panel: a row explaining why there is nothing to pick.
+        #expect(items.contains(.header("No skins found")))
+        #expect(items.allSatisfy { !$0.isSelectable }, "there is nothing to click")
+    }
+
+    @Test func skinPickerWorksWithNoCurrentMatch() {
+        // The configured skin was deleted from disk; the picker still has to render.
+        let items = PetMenuModel.skinPickerItems(
+            strings: english,
+            skins: ["cat"],
+            currentSkin: "gone"
+        )
+
+        #expect(items.filter(\.isSelectable).count == 1)
+        #expect(items.allSatisfy { !$0.isOn }, "nothing should look selected")
+    }
+
+    @Test func skinIdentifiersSurviveGroupedNames() {
+        // "cat/v1" is a nested identifier; it must round-trip through the command unchanged.
+        let command = MenuCommand.selectSkin("cat/v1")
+        #expect(command == .selectSkin("cat/v1"))
+        #expect(command.identifier == "selectSkin:cat/v1")
+    }
+
+    // MARK: Menu-bar menu
+
+    @Test func menuBarMenuCarriesBothTheActionsAndTheSkins() {
+        let items = PetMenuModel.menuBarItems(
+            strings: english,
+            skinName: "cat",
+            skins: ["cat", "dog"],
+            speechEnabled: true
+        )
+
+        // The menu bar has no right-click to hang a picker on, so it must carry both.
+        for command in MenuCommand.core {
+            #expect(items.contains { $0.command == command }, "menu bar lost \(command)")
+        }
+        #expect(items.contains { $0.command == .selectSkin("dog") })
+        #expect(items.contains(.header("Choose Skin")))
+    }
+
+    @Test func menuBarMenuHasNoDanglingSeparatorWhenThereAreNoSkins() {
+        let items = PetMenuModel.menuBarItems(
+            strings: english,
+            skinName: "cat",
+            skins: [],
+            speechEnabled: true
+        )
+
+        #expect(!items.contains(.header("Choose Skin")))
+        #expect(items.last == .action(.quit, title: "Quit DesktopPets"),
+                "the menu must not end on a separator")
     }
 }
 

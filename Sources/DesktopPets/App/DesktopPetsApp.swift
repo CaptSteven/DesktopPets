@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let skin = try SpriteSource.loadSkin(named: skinName, from: locator)
             let controller = PetController(locator: locator, config: config, skin: skin)
             controller.onReloadRequested = { [weak self] in self?.reload() }
+            controller.onSkinChangeRequested = { [weak self] name in self?.switchSkin(to: name) }
             controller.start()
             self.controller = controller
         } catch {
@@ -64,6 +65,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller?.stop()
         controller = nil
         startController()
+    }
+
+    /// Swaps to another skin and rebuilds. The controller has already written the choice to
+    /// `ConfigStore`, so `startController` picks it up.
+    private func switchSkin(to name: String) {
+        Log.info("Switching skin to \"\(name)\"")
+        reload()
     }
 
     private func reportFatal(_ error: Error) {
