@@ -113,7 +113,13 @@ public struct SkinManifest: Codable, Equatable {
     public var states: [String: StateSpec]
 
     /// States the runtime knows how to drive. Anything else is a typo and gets rejected.
-    public static let knownStates: Set<String> = ["idle", "walk", "drag", "sleep", "click"]
+    ///
+    /// `climb`, `mine`, `fight` and `tnt` are optional extras: the pet performs them on a whim, and
+    /// a skin that does not provide them simply falls back to `idle` for those moments.
+    public static let knownStates: Set<String> = [
+        "idle", "walk", "drag", "sleep", "click",
+        "climb", "mine", "fight", "tnt",
+    ]
     /// `idle` is the universal fallback and `walk` is the point of the app; the rest are optional.
     public static let requiredStates: Set<String> = ["idle", "walk"]
 

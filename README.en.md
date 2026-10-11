@@ -199,12 +199,37 @@ Rules the loader enforces:
 - **Every frame in a skin must be the same size**, matching `frameSize` in `skin.json`.
 - **Frames must have transparent backgrounds.** For looks, and so the pet does not sit inside a
   solid block of colour.
-- `idle` and `walk` are required. `drag`, `sleep` and `click` are optional; if you leave one out,
-  the pet falls back to `idle` for it.
+- `idle` and `walk` are required. The rest are optional; if you leave one out, the pet falls back to
+  `idle` for it.
 - **Unknown state names are rejected**, so a typo like `sllep` fails loudly instead of silently
   doing nothing.
 - To skip a state entirely, delete its `skin.json` entry *and* its `src/` directory. The packer is
   stricter than the app and requires frames for every declared state.
+
+### Nine states; the first five are the essentials
+
+| State | Required | Played when | Suggested frames / fps |
+| --- | --- | --- | --- |
+| `idle` | ✅ | standing around | 4 / 6 |
+| `walk` | ✅ | strolling sideways | 10 / 12 |
+| `drag` | | held by the mouse | 4 / 8 |
+| `sleep` | | 30s without interaction | 4 / 3 |
+| `click` | | poked | 6 / 12 (one-shot) |
+| `climb` | | going up or down a ladder | 6 / 8 |
+| `mine` | | occasionally swinging a pickaxe | 8 / 10 |
+| `fight` | | occasionally swinging a sword | 8 / 10 |
+| `tnt` | | occasionally lobbing TNT | 10 / 10 (one-shot) |
+
+The last four are what the pet does on a whim: left alone, it picks between walking, climbing to a
+different height, and putting on a short performance. The probabilities live in `BehaviorPlan`
+(35% performance / 25% climb by default).
+
+**If you do not draw a state, the pet does not do that thing.** This matters because the ladder is
+*drawn by the app*, not loaded from the skin — so a skin without `climb` frames would otherwise
+slide up a ladder while standing still in whatever pose it was already in. A missing
+`climb`, `mine`, `fight` or `tnt` is skipped instead, and there is a test pinning that down.
+
+`climb` is the only state that changes the pet's height: walking always stays on the current line.
 
 `skin.json`:
 

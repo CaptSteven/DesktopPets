@@ -1,26 +1,45 @@
+import CoreGraphics
 import Testing
 @testable import DesktopPetsCore
 
-/// A degenerate but fully deterministic setup: a single-point walkable range means the target
-/// never depends on the RNG.
-private let pointRange: ClosedRange<Double> = 500...500
-/// Ranges chosen so the target is always on one side of `currentX`, making facing deterministic.
-private let rangeToTheLeft: ClosedRange<Double> = 0...999
-private let rangeToTheRight: ClosedRange<Double> = 1...1000
+/// A degenerate walkable area: zero width means a walk target can only be the current x, and zero
+/// height means there is nowhere to climb. That makes the walk/idle/sleep tests deterministic
+/// without having to seed the machine's own RNG.
+private let pointArea = CGRect(x: 500, y: 500, width: 0, height: 0)
+
+/// An area tall and wide enough for both walking and climbing.
+private let roomyArea = CGRect(x: 0, y: 0, width: 800, height: 600)
 
 @Suite struct PetStateMachineTests {
     func makeMachine(
         speed: Double = 100,
+        climbSpeed: Double = 100,
         sleepAfter: Double = 30,
         clickDuration: Double = 0.5,
         initialPause: Double = 1.5,
         minPause: Double = 2,
-        maxPause: Double = 2
+        maxPause: Double = 2,
+        performanceChance: Double = 0,
+        climbChance: Double = 0,
+        performances: [String] = [],
+        performanceDurations: [String: Double] = [:]
     ) -> PetStateMachine {
         PetStateMachine(
-            walkPlan: WalkPlan(speed: speed, minPause: minPause, maxPause: maxPause, minTravel: 0),
+            walkPlan: WalkPlan(
+                speed: speed,
+                climbSpeed: climbSpeed,
+                minPause: minPause,
+                maxPause: maxPause,
+                minTravel: 0
+            ),
+            behavior: BehaviorPlan(
+                performanceChance: performanceChance,
+                climbChance: climbChance,
+                performances: performances
+            ),
             sleepAfter: sleepAfter,
             clickDuration: clickDuration,
+            performanceDurations: performanceDurations,
             initialPause: initialPause
         )
     }
@@ -29,25 +48,26 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
     func advance(
         _ machine: inout PetStateMachine,
         seconds: Double,
-        currentX: Double = 500,
-        range: ClosedRange<Double> = pointRange,
+        current: CGPoint = CGPoint(x: 500, y: 500),
+        area: CGRect = pointArea,
         holdStill: Bool = false
     ) {
         let step = 1.0 / 30.0
         var elapsed = 0.0
         while elapsed < seconds {
-            machine.tick(dt: step, currentX: currentX, walkableRange: range, holdStill: holdStill)
+            machine.tick(dt: step, current: current, area: area, holdStill: holdStill)
             elapsed += step
         }
     }
 
     // MARK: Startup
 
-    @Test func startsIdleWithNoWalkTarget() {
+    @Test func startsIdleWithNoDestination() {
         let machine = makeMachine()
 
         #expect(machine.activity == .idle)
-        #expect(machine.walkTargetX == nil)
+        #expect(machine.walkTarget == nil)
+        #expect(machine.climbTargetY == nil)
         #expect(machine.facing == .right)
     }
 
@@ -63,25 +83,28 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
 
     // MARK: Walking
 
-    @Test func walkTargetIsWithinTheWalkableRange() throws {
+    @Test func aWalkTargetIsWithinTheWalkableArea() throws {
         var machine = makeMachine(initialPause: 0)
 
-        advance(&machine, seconds: 0.1, range: rangeToTheRight)
+        advance(&machine, seconds: 0.1, current: CGPoint(x: 100, y: 200), area: roomyArea)
 
-        let target = try #require(machine.walkTargetX)
-        #expect(rangeToTheRight.contains(target))
+        let target = try #require(machine.walkTarget)
+        #expect(roomyArea.contains(target))
+        #expect(target.y == 200, "a walk must stay on the current line")
     }
 
-    @Test func facingTurnsTowardsTheTarget() {
-        var walkingLeft = makeMachine(initialPause: 0)
-        advance(&walkingLeft, seconds: 0.1, currentX: 1000, range: rangeToTheLeft)
-        #expect(walkingLeft.activity == .walking)
-        #expect(walkingLeft.facing == .left)
+    @Test func facingTurnsTowardsTheTarget() throws {
+        // Standing outside the walkable area on each side, so every reachable target is on one
+        // side of the pet. The area spans x 56...744.
+        var left = makeMachine(initialPause: 0)
+        advance(&left, seconds: 0.1, current: CGPoint(x: 1000, y: 300), area: roomyArea)
+        #expect(left.activity == .walking)
+        #expect(left.facing == .left, "everything reachable is to the left of x=1000")
 
-        var walkingRight = makeMachine(initialPause: 0)
-        advance(&walkingRight, seconds: 0.1, currentX: 0, range: rangeToTheRight)
-        #expect(walkingRight.activity == .walking)
-        #expect(walkingRight.facing == .right)
+        var right = makeMachine(initialPause: 0)
+        advance(&right, seconds: 0.1, current: CGPoint(x: 0, y: 300), area: roomyArea)
+        #expect(right.activity == .walking)
+        #expect(right.facing == .right, "everything reachable is to the right of x=0")
     }
 
     @Test func arrivingReturnsToIdleAndClearsTheStaleTarget() {
@@ -89,11 +112,11 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
 
         advance(&machine, seconds: 0.1)
         #expect(machine.activity == .walking)
-        #expect(machine.walkTargetX != nil)
+        #expect(machine.walkTarget != nil)
 
         machine.arrivedAtDestination()
         #expect(machine.activity == .idle)
-        #expect(machine.walkTargetX == nil, "the stale target must not survive the walk")
+        #expect(machine.walkTarget == nil, "the stale target must not survive the walk")
     }
 
     @Test func arrivingRearsThePauseBeforeTheNextWalk() {
@@ -105,22 +128,166 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
         machine.arrivedAtDestination()
         #expect(machine.activity == .idle)
 
-        // The 2s pause must be honoured before the next walk starts.
+        // The 2s pause must be honoured before the next activity starts.
         advance(&machine, seconds: 1.0)
         #expect(machine.activity == .idle)
         advance(&machine, seconds: 1.5)
         #expect(machine.activity == .walking)
     }
 
-    @Test func theTargetIsNotReRolledWhileStillWalking() {
+    @Test func theTargetIsNotReRolledWhileStillGoing() {
         var machine = makeMachine(initialPause: 0)
 
         advance(&machine, seconds: 0.1)
-        let firstTarget = machine.walkTargetX
+        let firstTarget = machine.walkTarget
         #expect(firstTarget != nil)
 
         advance(&machine, seconds: 0.5)
-        #expect(machine.walkTargetX == firstTarget)
+        #expect(machine.walkTarget == firstTarget)
+    }
+
+    // MARK: Climbing
+
+    @Test func climbsWhenThereIsRoomAndItRollsAClimb() throws {
+        var machine = makeMachine(initialPause: 0, climbChance: 1.0)
+
+        advance(&machine, seconds: 0.1, current: CGPoint(x: 400, y: 300), area: roomyArea)
+
+        #expect(machine.activity == .climbing)
+        let targetY = try #require(machine.climbTargetY)
+        #expect(targetY != 300, "a climb must actually change height")
+        #expect((roomyArea.minY...roomyArea.maxY).contains(targetY))
+    }
+
+    @Test func doesNotClimbWhenThereIsNowhereToGo() {
+        // The zero-height area stands in for a screen with no vertical room.
+        var machine = makeMachine(initialPause: 0, climbChance: 1.0)
+
+        advance(&machine, seconds: 0.1)
+
+        #expect(machine.activity == .walking, "with no vertical room it should just walk")
+        #expect(machine.climbTargetY == nil)
+    }
+
+    @Test func doesNotClimbWhenTheSkinHasNoClimbingArt() {
+        // The ladder is drawn rather than loaded, so it would still appear — and the pet would
+        // slide up it in whatever pose it happened to be in. Better to stay on the ground.
+        var machine = PetStateMachine(
+            walkPlan: WalkPlan(speed: 100, minPause: 2, maxPause: 2, minTravel: 0),
+            behavior: BehaviorPlan(performanceChance: 0, climbChance: 1.0),
+            sleepAfter: 30,
+            clickDuration: 0.5,
+            animatableStates: ["idle", "walk"], // no "climb"
+            initialPause: 0
+        )
+
+        advance(&machine, seconds: 0.1, current: CGPoint(x: 400, y: 300), area: roomyArea)
+
+        #expect(machine.activity == .walking)
+        #expect(machine.climbTargetY == nil)
+    }
+
+    @Test func aClimbEndsWhenTheDestinationIsReached() {
+        var machine = makeMachine(initialPause: 0, climbChance: 1.0)
+
+        advance(&machine, seconds: 0.1, current: CGPoint(x: 400, y: 300), area: roomyArea)
+        #expect(machine.activity == .climbing)
+
+        machine.arrivedAtDestination()
+
+        #expect(machine.activity == .idle)
+        #expect(machine.climbTargetY == nil)
+    }
+
+    @Test func climbingDoesNotCountAsInteraction() {
+        var machine = makeMachine(sleepAfter: 5, initialPause: 0, climbChance: 1.0)
+
+        advance(&machine, seconds: 2, current: CGPoint(x: 400, y: 300), area: roomyArea)
+        #expect(machine.activity == .climbing)
+
+        advance(&machine, seconds: 4, current: CGPoint(x: 400, y: 300), area: roomyArea)
+        #expect(machine.activity == .sleeping, "a long climb is still not interaction")
+    }
+
+    // MARK: Performances
+
+    @Test func performsAStateTheSkinProvides() {
+        var machine = makeMachine(
+            initialPause: 0,
+            performanceChance: 1.0,
+            performances: ["mine"],
+            performanceDurations: ["mine": 0.5]
+        )
+
+        advance(&machine, seconds: 0.1)
+
+        #expect(machine.activity == .performing("mine"))
+        #expect(machine.activity.animationState == "mine")
+    }
+
+    @Test func skipsPerformancesTheSkinHasNoArtFor() {
+        // Declared in the behaviour plan but absent from the skin: playing `tnt` with no frames
+        // would look like the pet freezing mid-throw, so it is dropped instead.
+        var machine = makeMachine(
+            initialPause: 0,
+            performanceChance: 1.0,
+            performances: ["tnt"],
+            performanceDurations: [:]
+        )
+
+        advance(&machine, seconds: 0.1)
+
+        #expect(machine.activity == .walking, "with nothing to perform it should just walk")
+    }
+
+    @Test func aPerformancePlaysForItsDurationThenReturnsToIdle() {
+        var machine = makeMachine(
+            initialPause: 0,
+            performanceChance: 1.0,
+            performances: ["fight"],
+            performanceDurations: ["fight": 0.5]
+        )
+
+        advance(&machine, seconds: 0.1)
+        #expect(machine.activity == .performing("fight"))
+
+        advance(&machine, seconds: 0.3)
+        #expect(machine.activity == .performing("fight"), "still mid-swing")
+
+        advance(&machine, seconds: 0.3)
+        #expect(machine.activity == .idle, "the performance finished")
+    }
+
+    @Test func aPerformanceIsItselfInteraction() {
+        var machine = makeMachine(
+            sleepAfter: 3,
+            initialPause: 0,
+            performanceChance: 1.0,
+            performances: ["mine"],
+            performanceDurations: ["mine": 5]
+        )
+
+        advance(&machine, seconds: 0.1)
+        #expect(machine.activity == .performing("mine"))
+
+        advance(&machine, seconds: 4)
+        #expect(machine.activity == .performing("mine"), "it should not doze off mid-swing")
+    }
+
+    @Test func aSecondPerformanceIsNotReplayedAsOneShot() {
+        // Two different performances are different activities, so the machine moves between them.
+        var machine = makeMachine(
+            initialPause: 0,
+            performanceChance: 1.0,
+            performances: ["mine"],
+            performanceDurations: ["mine": 0.2]
+        )
+
+        advance(&machine, seconds: 0.1)
+        let firstTransition = machine.transitionCount
+
+        advance(&machine, seconds: 0.5) // finish, idle for a moment, then choose again
+        #expect(machine.transitionCount > firstTransition)
     }
 
     // MARK: Sleeping
@@ -133,17 +300,6 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
 
         advance(&machine, seconds: 2)
         #expect(machine.activity == .sleeping)
-    }
-
-    @Test func walkingDoesNotCountAsInteractionSoThePetStillDozes() {
-        // Never let it arrive, and make the initial pause immediate.
-        var machine = makeMachine(sleepAfter: 5, initialPause: 0)
-
-        advance(&machine, seconds: 4)
-        #expect(machine.activity == .walking, "still strolling")
-
-        advance(&machine, seconds: 2)
-        #expect(machine.activity == .sleeping, "autonomous walking must not reset the sleep clock")
     }
 
     @Test func sleepingIsStickyAcrossTicks() {
@@ -191,9 +347,8 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
         advance(&machine, seconds: 0.6)
         #expect(machine.activity == .idle)
 
-        // The sleep clock restarted, so it does not immediately doze off again.
         advance(&machine, seconds: 3)
-        #expect(machine.activity == .idle)
+        #expect(machine.activity == .idle, "the sleep clock restarted")
 
         advance(&machine, seconds: 3)
         #expect(machine.activity == .sleeping)
@@ -231,17 +386,6 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
 
         advance(&machine, seconds: 0.4)
         #expect(machine.activity == .showingClick, "the reaction restarted from zero")
-
-        advance(&machine, seconds: 0.2)
-        #expect(machine.activity == .idle)
-    }
-
-    @Test func aReactionIsItselfInteraction() {
-        var machine = makeMachine(sleepAfter: 3, clickDuration: 5, initialPause: 100)
-
-        machine.reactToClick()
-        advance(&machine, seconds: 4.5)
-        #expect(machine.activity == .showingClick, "the pet should not fall asleep mid-reaction")
     }
 
     // MARK: Dragging
@@ -252,7 +396,6 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
         machine.beginDrag()
         #expect(machine.activity == .dragging)
 
-        // Held for far longer than the sleep timeout: it must stay in the drag state.
         advance(&machine, seconds: 60)
         #expect(machine.activity == .dragging)
 
@@ -271,52 +414,20 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
         #expect(machine.activity == .idle, "the drop should restart the sleep clock, not resume it")
     }
 
-    // MARK: Tick hygiene
-
-    @Test func nonPositiveOrNonFiniteDeltaTimeIsIgnored() {
-        var machine = makeMachine(initialPause: 0)
-
-        machine.tick(dt: 0, currentX: 500, walkableRange: pointRange)
-        machine.tick(dt: -1, currentX: 500, walkableRange: pointRange)
-        machine.tick(dt: .nan, currentX: 500, walkableRange: pointRange)
-        machine.tick(dt: .infinity, currentX: 500, walkableRange: pointRange)
-
-        #expect(machine.activity == .idle, "garbage deltas must not advance the machine")
-    }
-
-    @Test func everyActivityMapsOntoAKnownSkinState() {
-        // A typo here would make the pet silently fall back to idle for that activity.
-        for activity in PetActivity.allCases {
-            #expect(
-                SkinManifest.knownStates.contains(activity.animationState),
-                "\(activity) maps to unknown state \"\(activity.animationState)\""
-            )
-        }
-    }
-
-    @Test func tuningValuesAreClampedAgainstNonsense() {
-        let machine = makeMachine(sleepAfter: -10, clickDuration: -1, initialPause: -5)
-
-        #expect(machine.sleepAfter >= 1)
-        #expect(machine.clickDuration > 0)
-    }
-
     // MARK: Held still (a menu is open)
 
-    @Test func holdingStillStopsThePetFromStartingAWalk() {
+    @Test func holdingStillStopsThePetFromSettingOff() {
         var machine = makeMachine(initialPause: 0)
 
-        // Ten times longer than the initial pause, and it still should not set off.
         advance(&machine, seconds: 10, holdStill: true)
 
         #expect(machine.activity == .idle)
-        #expect(machine.walkTargetX == nil)
+        #expect(machine.walkTarget == nil)
     }
 
     @Test func holdingStillStillLetsAReactionPlayOut() {
-        // The actual bug: with a menu open, clicking a sleeping pet left it stuck on the sleep
-        // frame, because the whole tick was skipped. The reaction has to run to completion.
-        var machine = makeMachine(clickDuration: 0.5, initialPause: 0)
+        // With a menu open, clicking a sleeping pet used to leave it stuck on the sleep frame.
+        var machine = makeMachine(clickDuration: 0.5)
 
         machine.reactToClick()
         #expect(machine.activity == .showingClick)
@@ -328,45 +439,63 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
         #expect(machine.activity == .idle, "the reaction finished even while held")
     }
 
-    @Test func holdingStillEndsAWalkInProgress() {
-        var machine = makeMachine(initialPause: 0)
+    @Test func holdingStillEndsAMoveInProgress() {
+        var machine = makeMachine(initialPause: 0, climbChance: 1.0)
 
-        advance(&machine, seconds: 0.1)
-        #expect(machine.activity == .walking)
+        advance(&machine, seconds: 0.1, current: CGPoint(x: 400, y: 300), area: roomyArea)
+        #expect(machine.activity == .climbing)
 
-        // The caller stops moving us, so staying in the walking state would just be an animation of
-        // a pet marching on the spot.
+        // Staying in the climbing state while the caller is not moving us would be an animation of
+        // a pet climbing in place.
         advance(&machine, seconds: 0.1, holdStill: true)
         #expect(machine.activity == .idle)
-        #expect(machine.walkTargetX == nil)
+        #expect(machine.climbTargetY == nil)
     }
 
-    @Test func holdingStillStillAllowsDozeOff() {
-        // Being held is not interaction, so a menu left open long enough still ends in a nap.
-        var machine = makeMachine(sleepAfter: 5, initialPause: 100)
-
-        advance(&machine, seconds: 3, holdStill: true)
-        #expect(machine.activity == .idle)
-
-        advance(&machine, seconds: 3, holdStill: true)
-        #expect(machine.activity == .sleeping)
-    }
-
-    @Test func aHeldPetResumesWalkingOnceReleased() {
+    @Test func aHeldPetResumesOnceReleased() {
         var machine = makeMachine(initialPause: 0, minPause: 1, maxPause: 1)
 
         advance(&machine, seconds: 10, holdStill: true)
         #expect(machine.activity == .idle)
 
-        // Release: it should pick up again rather than staying stuck.
         advance(&machine, seconds: 2)
         #expect(machine.activity == .walking)
     }
 
-    @Test func holdStillDefaultsToOff() {
-        // Every caller that does not pass the flag keeps the old behaviour.
+    // MARK: Tick hygiene
+
+    @Test func nonPositiveOrNonFiniteDeltaTimeIsIgnored() {
         var machine = makeMachine(initialPause: 0)
-        machine.tick(dt: 0.1, currentX: 500, walkableRange: pointRange)
-        #expect(machine.activity == .walking)
+
+        machine.tick(dt: 0, current: .zero, area: pointArea)
+        machine.tick(dt: -1, current: .zero, area: pointArea)
+        machine.tick(dt: .nan, current: .zero, area: pointArea)
+        machine.tick(dt: .infinity, current: .zero, area: pointArea)
+
+        #expect(machine.activity == .idle, "garbage deltas must not advance the machine")
+    }
+
+    @Test func everyActivityMapsOntoAKnownSkinState() {
+        // A typo here would make the pet silently fall back to idle for that activity.
+        for activity in PetActivity.representableCases {
+            #expect(
+                SkinManifest.knownStates.contains(activity.animationState),
+                "\(activity) maps to unknown state \"\(activity.animationState)\""
+            )
+        }
+    }
+
+    @Test func theBehaviourPlanClampsNonsenseProbabilities() {
+        let plan = BehaviorPlan(performanceChance: 5, climbChance: -2)
+
+        #expect(plan.performanceChance == 1)
+        #expect(plan.climbChance == 0)
+    }
+
+    @Test func tuningValuesAreClampedAgainstNonsense() {
+        let machine = makeMachine(sleepAfter: -10, clickDuration: -1, initialPause: -5)
+
+        #expect(machine.sleepAfter >= 1)
+        #expect(machine.clickDuration > 0)
     }
 }

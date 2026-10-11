@@ -33,6 +33,11 @@ final class PetController {
     private let menuController = PetMenuController()
     /// Always-reachable escape hatch in the menu bar, so "I cannot close it" is not possible.
     private let statusItem = StatusItemController()
+    /// The ladder shown while the pet climbs. Scenery only — it never takes a click.
+    private let ladder = LadderWindow()
+    /// Where the current climb started. The ladder spans the whole distance rather than following
+    /// the pet up, so this has to be remembered rather than recomputed each tick.
+    private var climbOriginY: Double?
 
     /// Set by the app delegate, which rebuilds the controller to pick up new or edited art.
     var onReloadRequested: (() -> Void)?
@@ -57,10 +62,13 @@ final class PetController {
 
         machine = PetStateMachine(
             walkPlan: config.walkPlan(),
+            behavior: config.behaviorPlan(),
             sleepAfter: config.sleepAfter,
             // Only a real "click" animation sets the duration; the lookup must not fall back to
             // idle, which would report a looping animation's duration of zero.
-            clickDuration: skin.animations["click"]?.duration ?? 0
+            clickDuration: skin.animations["click"]?.duration ?? 0,
+            animatableStates: Set(skin.animations.keys),
+            performanceDurations: Self.performanceDurations(in: skin)
         )
 
         speech = SpeechController(
@@ -105,6 +113,7 @@ final class PetController {
         speech.stop()
         menuController.close()
         statusItem.remove()
+        ladder.hide()
         window.orderOut(nil)
     }
 
@@ -272,20 +281,38 @@ final class PetController {
 
         let windowSize = window.frame.size
         let visible = ScreenMapping.visibleFrame(nearest: hotspot)
-        let walkable = machine.walkPlan.walkableRange(in: visible, petWidth: windowSize.width)
+        let area = machine.walkPlan.walkableArea(in: visible, petSize: windowSize)
 
         let activity = machine.tick(
             dt: dt,
-            currentX: hotspot.x,
-            walkableRange: walkable,
+            current: hotspot,
+            area: area,
             holdStill: isHeld
         )
 
-        // The machine decides where to walk; the controller integrates the movement.
-        if !isHeld, activity == .walking, let targetX = machine.walkTargetX {
-            let step = machine.walkPlan.step(fromX: hotspot.x, toX: targetX, dt: dt)
-            hotspot.x = step.x
-            if step.arrived { machine.arrivedAtDestination() }
+        // The machine decides where to go; the controller integrates the movement. Climbing moves
+        // straight up or down and walking stays on the current line, so one step covers both — only
+        // the speed differs.
+        if !isHeld {
+            let target: CGPoint?
+            let speed: Double
+            switch activity {
+            case .walking:
+                target = machine.walkTarget
+                speed = machine.walkPlan.speed
+            case .climbing:
+                target = machine.climbTargetY.map { CGPoint(x: hotspot.x, y: $0) }
+                speed = machine.walkPlan.climbSpeed
+            default:
+                target = nil
+                speed = 0
+            }
+
+            if let target {
+                let step = machine.walkPlan.step(from: hotspot, to: target, dt: dt, speed: speed)
+                hotspot = step.position
+                if step.arrived { machine.arrivedAtDestination() }
+            }
         }
 
         // While dragging, the view is moving the window and would fight us for control.
@@ -294,7 +321,28 @@ final class PetController {
         }
 
         updateAnimation(for: activity, dt: dt)
+        updateLadder(for: activity)
         updateSpeech(for: activity, dt: dt, visible: visible)
+    }
+
+    /// Shows the ladder while the pet is climbing, and hides it otherwise.
+    private func updateLadder(for activity: PetActivity) {
+        guard activity == .climbing, let targetY = machine.climbTargetY else {
+            if ladder.isVisible { ladder.hide() }
+            climbOriginY = nil
+            return
+        }
+
+        let origin = climbOriginY ?? hotspot.y
+        climbOriginY = origin
+
+        ladder.show(
+            from: origin,
+            to: targetY,
+            centreX: hotspot.x,
+            petWidth: window.frame.width,
+            behind: window
+        )
     }
 
     private func moveWindowToHotspot(visible: CGRect) {
@@ -362,7 +410,7 @@ final class PetController {
             case .dragging:
                 speech.react(to: .drag, petState: activity.animationState,
                              petFrame: window.frame, visibleFrame: visible)
-            case .idle, .walking, .showingClick:
+            case .idle, .walking, .climbing, .showingClick, .performing:
                 break
             }
             previousActivity = activity
@@ -419,6 +467,24 @@ final class PetController {
     }
 
     // MARK: Placement
+
+    /// How long each performance state lasts, taken from the frames the skin actually provides.
+    ///
+    /// A one-shot performance runs its frames once; a looping one is given three passes, so the pet
+    /// does not swing a pickaxe forever. States the skin has no art for are simply absent from the
+    /// result, and the machine skips them rather than freezing mid-swing.
+    private static func performanceDurations(in skin: LoadedSkin) -> [String: Double] {
+        var durations: [String: Double] = [:]
+        for state in BehaviorPlan().performances {
+            guard let animation = skin.animations[state], animation.frameCount > 0 else { continue }
+            let onePass = animation.spec.fps > 0
+                ? Double(animation.frameCount) / animation.spec.fps
+                : 0
+            guard onePass > 0 else { continue }
+            durations[state] = animation.spec.loop ? onePass * 3 : onePass
+        }
+        return durations
+    }
 
     private static func defaultHotspot(anchor: Anchor, windowSize: CGSize, visible: CGRect) -> CGPoint {
         switch anchor {

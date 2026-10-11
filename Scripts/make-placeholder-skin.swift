@@ -21,10 +21,16 @@ let frameSize = 64
 /// Matches `SkinManifest.knownStates`. `click` is the one non-looping state.
 let states: [(name: String, fps: Double, loop: Bool, frames: Int)] = [
     ("idle", 6, true, 4),
-    ("walk", 10, true, 6),
+    // Ten frames rather than six: a walk cycle reads much better with a proper contact, down,
+    // passing and up per step, and the packer does not care how many there are.
+    ("walk", 12, true, 10),
     ("drag", 8, true, 4),
     ("sleep", 3, true, 4),
     ("click", 12, false, 6),
+    ("climb", 8, true, 6),
+    ("mine", 10, true, 8),
+    ("fight", 10, true, 8),
+    ("tnt", 10, false, 10),
 ]
 
 // MARK: - Palette
@@ -71,6 +77,14 @@ let skins: [(identifier: String, palette: Palette)] = [
 
 // MARK: - Pose
 
+/// Something the pet can be holding, used by the performance animations.
+enum HeldItem {
+    case none
+    case pickaxe
+    case sword
+    case tnt
+}
+
 /// Every knob the drawing routine reacts to. Each state animates a few of these.
 struct Pose {
     /// Vertical shift of the whole body, in points.
@@ -94,6 +108,16 @@ struct Pose {
     var sleepZPhase: Double? = nil
     /// Draws a surprise mark when > 0.
     var surprise: Double = 0
+    /// What the pet is holding, if anything.
+    var item: HeldItem = .none
+    /// Swing angle of the held item, in radians. Negative is raised behind the head.
+    var itemSwing: Double = 0
+    /// Where a thrown item has flown to, relative to the pet. nil means still in hand.
+    var thrownOffset: CGPoint? = nil
+    /// Draws a blast, 1.0 being the brightest moment.
+    var blast: Double = 0
+    /// Both arms raised together, as when gripping a ladder.
+    var climbing: Bool = false
 }
 
 // MARK: - Drawing
@@ -167,12 +191,51 @@ func drawCritter(_ context: CGContext, pose: Pose, palette: Palette) {
     }
 
     // Arms.
-    if pose.armsUp > 0.01 {
+    if pose.climbing {
+        // Both arms overhead, alternating which one is higher, as if reaching rung to rung.
+        for (index, direction) in [-1.0, 1.0].enumerated() {
+            let reach = 0.55 + 0.45 * pose.armsUp + (index == 0 ? 0.2 : -0.2)
+            let armX = centreX + direction * (bodyWidth / 2 - 2)
+            let armY = bodyY + bodyHeight * 0.15 + reach * (bodyHeight * 0.7)
+            fillEllipse(context, centreX: armX, centreY: armY, width: 7, height: 7, colour: palette.body)
+        }
+    } else if pose.armsUp > 0.01 {
         for direction in [-1.0, 1.0] {
             let armX = centreX + direction * (bodyWidth / 2 - 1)
             let armY = bodyY + bodyHeight * 0.1 + pose.armsUp * (bodyHeight * 0.42)
             fillEllipse(context, centreX: armX + direction * pose.armsUp * 3, centreY: armY,
                         width: 8, height: 8, colour: palette.body)
+        }
+    }
+
+    // Held tool, drawn over the body so the swing reads clearly.
+    if pose.item != .none, pose.thrownOffset == nil {
+        drawHeldItem(context, item: pose.item, swing: pose.itemSwing,
+                     from: CGPoint(x: centreX + bodyWidth * 0.42, y: bodyY + bodyHeight * 0.05))
+    }
+
+    // A thrown item, on its way out.
+    if let offset = pose.thrownOffset {
+        let centre = CGPoint(x: centreX + offset.x, y: bodyY + offset.y)
+        let bomb = CGColor(red: 0.85, green: 0.24, blue: 0.18, alpha: 1)
+        fillEllipse(context, centreX: centre.x, centreY: centre.y, width: 11, height: 11, colour: bomb)
+        context.setStrokeColor(palette.ink)
+        context.setLineWidth(1.4)
+        context.strokeEllipse(in: CGRect(x: centre.x - 5.5, y: centre.y - 5.5, width: 11, height: 11))
+    }
+
+    // Blast, for the moment the TNT goes off.
+    if pose.blast > 0.01 {
+        let radius = 8 + 18 * pose.blast
+        let alpha = 0.85 * (1 - pose.blast * 0.4)
+        let colours = [
+            CGColor(red: 1.0, green: 0.92, blue: 0.55, alpha: alpha),
+            CGColor(red: 1.0, green: 0.62, blue: 0.20, alpha: alpha * 0.9),
+        ]
+        for (index, colour) in colours.enumerated() {
+            let scale = index == 0 ? 1.0 : 0.62
+            fillEllipse(context, centreX: centreX + 12, centreY: bodyY + 4,
+                        width: radius * 2 * scale, height: radius * 2 * scale, colour: colour)
         }
     }
 
@@ -213,6 +276,60 @@ func drawCritter(_ context: CGContext, pose: Pose, palette: Palette) {
         context.addLine(to: CGPoint(x: centreX + bodyWidth * 0.5, y: bodyTop + 12))
         context.strokePath()
     }
+}
+
+/// The pickaxe, sword or block the pet is holding, rotated about the grip.
+func drawHeldItem(_ context: CGContext, item: HeldItem, swing: Double, from grip: CGPoint) {
+    context.saveGState()
+    context.translateBy(x: grip.x, y: grip.y)
+    context.rotate(by: swing)
+    context.setLineCap(.round)
+
+    let handle = CGColor(red: 0.55, green: 0.38, blue: 0.22, alpha: 1)
+    let metal = CGColor(red: 0.62, green: 0.68, blue: 0.75, alpha: 1)
+    let gold = CGColor(red: 0.72, green: 0.58, blue: 0.24, alpha: 1)
+
+    switch item {
+    case .none:
+        break
+
+    case .pickaxe:
+        context.setStrokeColor(handle)
+        context.setLineWidth(3)
+        context.move(to: .zero)
+        context.addLine(to: CGPoint(x: 0, y: 22))
+        context.strokePath()
+
+        context.setStrokeColor(metal)
+        context.setLineWidth(3.5)
+        context.move(to: CGPoint(x: -9, y: 20))
+        context.addLine(to: CGPoint(x: 0, y: 25))
+        context.addLine(to: CGPoint(x: 9, y: 20))
+        context.strokePath()
+
+    case .sword:
+        context.setStrokeColor(metal)
+        context.setLineWidth(3.5)
+        context.move(to: .zero)
+        context.addLine(to: CGPoint(x: 0, y: 20))
+        context.strokePath()
+
+        context.setStrokeColor(gold)
+        context.setLineWidth(2.5)
+        context.move(to: CGPoint(x: -5, y: 4))
+        context.addLine(to: CGPoint(x: 5, y: 4))
+        context.strokePath()
+
+    case .tnt:
+        let red = CGColor(red: 0.85, green: 0.24, blue: 0.18, alpha: 1)
+        let white = CGColor(red: 0.95, green: 0.95, blue: 0.93, alpha: 1)
+        context.setFillColor(red)
+        context.fill(CGRect(x: -7, y: 6, width: 14, height: 14))
+        context.setFillColor(white)
+        context.fill(CGRect(x: -7, y: 11, width: 14, height: 4))
+    }
+
+    context.restoreGState()
 }
 
 /// A "Z" drawn from three strokes, so no font handling is needed.
@@ -291,6 +408,101 @@ func pose(for state: String, frame: Int, of count: Int) -> Pose {
             rightFootLift: hop * 3,
             eyeOpen: 1.6,
             surprise: hop
+        )
+
+    case "climb":
+        // Reaching rung to rung: hands and feet alternate, and the body hangs slightly back.
+        let leftLift = max(0, -wave) * 4 + 2
+        let rightLift = max(0, wave) * 4 + 2
+        let hang = 1 + wave * 0.8
+        let reach = 0.5 - 0.5 * wave
+        return Pose(
+            bodyOffsetY: hang,
+            leftFootLift: leftLift,
+            rightFootLift: rightLift,
+            eyeOpen: 1.05,
+            armsUp: reach,
+            climbing: true
+        )
+
+    case "mine":
+        // Wind the pickaxe up behind the head, then bring it down: one swing per loop.
+        let arc = 0.5 - 0.5 * cos(t * 2 * .pi)
+        return Pose(
+            bodyOffsetY: arc * 1.5,
+            squash: 1 - arc * 0.05,
+            stretch: 1 + arc * 0.04,
+            eyeOpen: 0.8 + arc * 0.4,
+            armsUp: 0.9 - arc * 1.5,
+            item: .pickaxe,
+            itemSwing: -1.25 + 2.3 * arc
+        )
+
+    case "fight":
+        // A quicker, flatter slash than the pickaxe swing.
+        let arc = 0.5 - 0.5 * cos(t * 2 * .pi)
+        let chop = arc * 2
+        let lean = 1 + 0.04 * (0.5 - arc)
+        return Pose(
+            bodyOffsetY: -1 + chop,
+            squash: lean,
+            eyeOpen: 1.2,
+            armsUp: 0.7 - arc * 1.3,
+            item: .sword,
+            itemSwing: -1.0 + 2.0 * arc
+        )
+
+    case "tnt":
+        // Hold, wind up, throw, blast, recover. Played once, so the last frame settles back toward
+        // the first rather than jumping when the machine returns to idle.
+        let progress = Double(frame) / Double(max(count - 1, 1))
+
+        if progress < 0.3 {
+            let hold = progress / 0.3
+            return Pose(bodyOffsetY: -0.5, item: .tnt, itemSwing: -0.25 * hold)
+        }
+
+        if progress < 0.6 {
+            let wind = (progress - 0.3) / 0.3
+            let rise = -0.5 + wind * 1.5
+            let squeeze = 1 - wind * 0.08
+            let stretch = 1 + wind * 0.07
+            let lift = 0.4 + wind * 0.6
+            let flight = CGPoint(x: wind * 28, y: 14 + wind * 12)
+            return Pose(
+                bodyOffsetY: rise,
+                squash: squeeze,
+                stretch: stretch,
+                eyeOpen: 1.3,
+                armsUp: lift,
+                thrownOffset: flight
+            )
+        }
+
+        if progress < 0.85 {
+            let blow = (progress - 0.6) / 0.25
+            let flash = max(0, 1 - abs(blow - 0.35) * 2.4)
+            let drift = CGPoint(x: 28 + blow * 10, y: 26 - blow * 6)
+            return Pose(
+                bodyOffsetY: 1.5,
+                squash: 0.95,
+                eyeOpen: 1.6,
+                armsUp: 0.85,
+                thrownOffset: drift,
+                blast: flash
+            )
+        }
+
+        let settle = (progress - 0.85) / 0.15
+        let calm = 1 - settle
+        let fall = 1.5 * calm
+        let drop = 0.6 * calm
+        let wide = 1 + 0.4 * calm
+        return Pose(
+            bodyOffsetY: fall,
+            eyeOpen: wide,
+            armsUp: drop,
+            surprise: settle < 0.5 ? calm * 2 : 0
         )
 
     default:

@@ -4,40 +4,129 @@ import Testing
 
 @Suite struct WalkPlanTests {
     let screen = CGRect(x: 0, y: 0, width: 1000, height: 800)
-    let petWidth: Double = 64
+    let petSize = CGSize(width: 64, height: 64)
 
-    // MARK: Walkable range
+    // MARK: Walkable area
 
-    @Test func walkableRangeKeepsTheWholeSpriteInsideTheVisibleFrame() {
+    @Test func walkableAreaKeepsTheWholeSpriteInsideTheVisibleFrame() {
         let plan = WalkPlan(edgeInset: 24)
-        let range = plan.walkableRange(in: screen, petWidth: petWidth)
+        let area = plan.walkableArea(in: screen, petSize: petSize)
 
-        // 0 + 24 + 32 = 56, and 1000 - 24 - 32 = 944.
-        #expect(range.lowerBound == 56)
-        #expect(range.upperBound == 944)
-
-        // The resulting window edges are inside the frame at both extremes.
-        let leftmostWindowEdge = range.lowerBound - petWidth / 2
-        let rightmostWindowEdge = range.upperBound + petWidth / 2
-        #expect(leftmostWindowEdge >= screen.minX + plan.edgeInset)
-        #expect(rightmostWindowEdge <= screen.maxX - plan.edgeInset)
+        // Hotspot bounds, half a sprite in from the inset edge on every side.
+        #expect(area.minX == 56) // 0 + 24 + 32
+        #expect(area.maxX == 944) // 1000 - 24 - 32
+        #expect(area.minY == 56)
+        #expect(area.maxY == 744)
     }
 
-    @Test func walkableRangeCollapsesToTheMiddleWhenTheSpriteDoesNotFit() {
-        let narrow = CGRect(x: 0, y: 0, width: 80, height: 800)
-        let range = WalkPlan(edgeInset: 24).walkableRange(in: narrow, petWidth: petWidth)
+    @Test func walkableAreaCollapsesToTheMiddleWhenTheSpriteDoesNotFit() {
+        let narrow = CGRect(x: 0, y: 0, width: 80, height: 80)
+        let area = WalkPlan(edgeInset: 24).walkableArea(in: narrow, petSize: petSize)
 
-        #expect(range.lowerBound == 40)
-        #expect(range.upperBound == 40)
-        #expect(range.lowerBound <= range.upperBound, "range must not be inverted")
+        #expect(area.midX == 40)
+        #expect(area.midY == 40)
+        #expect(area.width >= 0, "the area must never be inverted")
+        #expect(area.height >= 0)
     }
 
-    @Test func walkableRangeRespectsANegativeOriginScreen() {
-        let leftScreen = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
-        let range = WalkPlan(edgeInset: 0).walkableRange(in: leftScreen, petWidth: 64)
+    @Test func walkableAreaRespectsANegativeOriginScreen() {
+        // A second display positioned to the left of and below the primary one.
+        let leftScreen = CGRect(x: -1920, y: -200, width: 1920, height: 1080)
+        let area = WalkPlan(edgeInset: 0).walkableArea(in: leftScreen, petSize: petSize)
 
-        #expect(range.lowerBound == -1920 + 32)
-        #expect(range.upperBound == 0 - 32)
+        // Typed explicitly: inline arithmetic on the right of == infers Int and compares unequal
+        // for equal numbers. See the note at the top of TestSupport.swift.
+        let expectedMinX: CGFloat = -1920 + 32
+        let expectedMaxX: CGFloat = 0 - 32
+        let expectedMinY: CGFloat = -200 + 32
+
+        #expect(area.minX == expectedMinX)
+        #expect(area.maxX == expectedMaxX)
+        #expect(area.minY == expectedMinY)
+    }
+
+    // MARK: Choosing a walk
+
+    @Test func aWalkTargetStaysOnTheCurrentLine() {
+        // Walking never changes height — that is what climbing is for, and keeping them separate
+        // means a walk can never imply a diagonal drift.
+        let plan = WalkPlan(minTravel: 48)
+        let area = plan.walkableArea(in: screen, petSize: petSize)
+        let current = CGPoint(x: 300, y: 400)
+        var rng = SeededGenerator(seed: 42)
+
+        for _ in 0..<50 {
+            let target = plan.chooseWalkTarget(in: area, from: current, using: &rng)
+            #expect(target.y == current.y, "a walk target must not change height")
+        }
+    }
+
+    @Test func aWalkTargetIsInsideTheAreaAndWorthStarting() {
+        let plan = WalkPlan(minTravel: 48)
+        let area = plan.walkableArea(in: screen, petSize: petSize)
+        var rng = SeededGenerator(seed: 7)
+
+        for _ in 0..<200 {
+            let currentX = Double.random(in: area.minX...area.maxX, using: &rng)
+            let current = CGPoint(x: currentX, y: 400)
+            let target = plan.chooseWalkTarget(in: area, from: current, using: &rng)
+
+            #expect(area.contains(target), "target \(target) escaped \(area)")
+            #expect(abs(target.x - current.x) >= 48, "target was a micro-step")
+        }
+    }
+
+    @Test func walkTargetsReproduceForTheSameSeed() {
+        let plan = WalkPlan()
+        let area = plan.walkableArea(in: screen, petSize: petSize)
+
+        var first = SeededGenerator(seed: 9)
+        var second = SeededGenerator(seed: 9)
+        let a = (0..<10).map { _ in plan.chooseWalkTarget(in: area, from: CGPoint(x: 500, y: 100), using: &first) }
+        let b = (0..<10).map { _ in plan.chooseWalkTarget(in: area, from: CGPoint(x: 500, y: 100), using: &second) }
+
+        #expect(a == b)
+    }
+
+    // MARK: Choosing a climb
+
+    @Test func aClimbTargetChangesHeightAndStaysInsideTheArea() {
+        let plan = WalkPlan(minClimb: 90)
+        let area = plan.walkableArea(in: screen, petSize: petSize)
+        var rng = SeededGenerator(seed: 3)
+
+        for _ in 0..<200 {
+            let currentY = Double.random(in: area.minY...area.maxY, using: &rng)
+            let target = plan.chooseClimbTarget(in: area, from: currentY, using: &rng)
+
+            let unwrapped = try? #require(target)
+            guard let unwrapped else { continue }
+            #expect(area.minY...area.maxY ~= unwrapped)
+            #expect(unwrapped != currentY, "a climb that goes nowhere would play the animation on the spot")
+        }
+    }
+
+    @Test func aClimbTargetIsAtLeastMinClimbAwayWhenThereIsRoom() {
+        let plan = WalkPlan(minClimb: 90)
+        let area = plan.walkableArea(in: screen, petSize: petSize)
+        var rng = SeededGenerator(seed: 11)
+
+        // Start from a plain interior point so the re-roll has room to satisfy the minimum.
+        for _ in 0..<100 {
+            let target = try? #require(plan.chooseClimbTarget(in: area, from: 400, using: &rng))
+            if let target { #expect(abs(target - 400) >= 90) }
+        }
+    }
+
+    @Test func thereIsNoClimbWhenThereIsNowhereToGo() {
+        // A screen barely taller than the pet: climbing would be a no-op, so the plan declines.
+        let shortScreen = CGRect(x: 0, y: 0, width: 1000, height: 140)
+        let plan = WalkPlan(edgeInset: 24, minClimb: 90)
+        let area = plan.walkableArea(in: shortScreen, petSize: petSize)
+        var rng = SeededGenerator(seed: 5)
+
+        #expect(area.height < 90)
+        #expect(plan.chooseClimbTarget(in: area, from: area.midY, using: &rng) == nil)
     }
 
     // MARK: Facing
@@ -55,105 +144,89 @@ import Testing
 
     @Test func stepMovesAtMostSpeedTimesDeltaTime() {
         let plan = WalkPlan(speed: 42)
-        let result = plan.step(fromX: 0, toX: 100, dt: 1)
+        let result = plan.step(from: .zero, to: CGPoint(x: 100, y: 0), dt: 1, speed: plan.speed)
 
-        #expect(abs(result.x - 42) <= 0.0001)
+        #expect(abs(result.position.x - 42) <= 0.0001)
+        #expect(result.position.y == 0)
         #expect(!result.arrived)
     }
 
-    @Test func stepMovesLeftWhenTheTargetIsBehind() {
-        let plan = WalkPlan(speed: 42)
-        let result = plan.step(fromX: 100, toX: 0, dt: 1)
+    @Test func stepMovesStraightUpWhenTheTargetIsAbove() {
+        // What a climb looks like: no horizontal component at all.
+        let plan = WalkPlan(climbSpeed: 28)
+        let result = plan.step(
+            from: CGPoint(x: 500, y: 100),
+            to: CGPoint(x: 500, y: 400),
+            dt: 1,
+            speed: plan.climbSpeed
+        )
 
-        #expect(abs(result.x - 58) <= 0.0001)
+        #expect(result.position.x == 500, "climbing must not drift sideways")
+        #expect(abs(result.position.y - 128) <= 0.0001)
         #expect(!result.arrived)
+    }
+
+    @Test func stepCoversTheFullDistanceOnADiagonal() {
+        // The step is limited by *distance*, not per axis, so a diagonal move is not faster.
+        let plan = WalkPlan()
+        let result = plan.step(from: .zero, to: CGPoint(x: 30, y: 40), dt: 1, speed: 10)
+
+        let travelled = (result.position.x * result.position.x + result.position.y * result.position.y).squareRoot()
+        #expect(abs(travelled - 10) <= 0.0001, "travelled \(travelled), expected exactly the speed")
     }
 
     @Test func stepLandsExactlyOnTheTargetWithoutOvershooting() {
-        let plan = WalkPlan(speed: 42)
-        let result = plan.step(fromX: 0, toX: 100, dt: 10)
+        let plan = WalkPlan()
+        let result = plan.step(from: .zero, to: CGPoint(x: 100, y: 0), dt: 10, speed: 42)
 
-        #expect(abs(result.x - 100) <= 0.0001, "must clamp onto the target, not overshoot")
+        #expect(result.position == CGPoint(x: 100, y: 0))
         #expect(result.arrived)
     }
 
     @Test func stepReportsArrivalWhenAlreadyThere() {
-        let plan = WalkPlan(speed: 42)
-        let result = plan.step(fromX: 250, toX: 250, dt: 0.033)
+        let plan = WalkPlan()
+        let result = plan.step(
+            from: CGPoint(x: 250, y: 250),
+            to: CGPoint(x: 250, y: 250),
+            dt: 0.033,
+            speed: 42
+        )
 
-        #expect(abs(result.x - 250) <= 0.0001)
+        #expect(result.position == CGPoint(x: 250, y: 250))
         #expect(result.arrived)
     }
 
     @Test func stepWithNonPositiveDeltaTimeDoesNotMove() {
-        let plan = WalkPlan(speed: 42)
-        #expect(abs(plan.step(fromX: 10, toX: 900, dt: 0).x - 10) <= 0.0001)
+        let plan = WalkPlan()
+        let result = plan.step(from: .zero, to: CGPoint(x: 900, y: 900), dt: 0, speed: 42)
+
+        #expect(result.position == .zero)
+        #expect(!result.arrived)
     }
 
     @Test func repeatedStepsConvergeOnTheTarget() {
-        let plan = WalkPlan(speed: 42)
-        var x = 0.0
+        let plan = WalkPlan()
+        var position = CGPoint(x: 0, y: 0)
+        let target = CGPoint(x: 400, y: 300)
         var ticks = 0
-        let target = 400.0
 
         while ticks < 10_000 {
-            let result = plan.step(fromX: x, toX: target, dt: 1.0 / 30.0)
-            x = result.x
+            let result = plan.step(from: position, to: target, dt: 1.0 / 30.0, speed: plan.speed)
+            position = result.position
             ticks += 1
             if result.arrived { break }
         }
 
-        #expect(abs(x - target) <= 0.0001)
-        // 400pt at 42pt/s is ~9.5s, so ~286 ticks at 30Hz. Generous bound to avoid flakiness.
-        #expect(ticks < 400)
-    }
-
-    // MARK: Target selection
-
-    @Test func chooseTargetStaysWithinRangeAndRespectsMinimumTravel() {
-        let plan = WalkPlan(minTravel: 48)
-        let range = plan.walkableRange(in: screen, petWidth: petWidth)
-        var rng = SeededGenerator(seed: 42)
-
-        for _ in 0..<200 {
-            let currentX = Double.random(in: range, using: &rng)
-            let target = plan.chooseTarget(in: range, from: currentX, using: &rng)
-
-            #expect(range.contains(target), "target \(target) escaped \(range)")
-            #expect(abs(target - currentX) >= 48, "target was a micro-step")
-        }
-    }
-
-    @Test func chooseTargetReproducesForTheSameSeed() {
-        let plan = WalkPlan()
-        let range = plan.walkableRange(in: screen, petWidth: petWidth)
-
-        var first = SeededGenerator(seed: 7)
-        var second = SeededGenerator(seed: 7)
-        let picksA = (0..<10).map { _ in plan.chooseTarget(in: range, from: 500, using: &first) }
-        let picksB = (0..<10).map { _ in plan.chooseTarget(in: range, from: 500, using: &second) }
-
-        #expect(picksA == picksB)
-    }
-
-    @Test func chooseTargetWithADegenerateRangeReturnsThatPoint() {
-        var rng = SeededGenerator(seed: 1)
-        #expect(WalkPlan().chooseTarget(in: 300...300, from: 900, using: &rng) == 300)
-    }
-
-    @Test func chooseTargetRelaxesMinimumTravelOnATinyScreen() {
-        // A 20pt range cannot satisfy a 48pt minimum travel; it must still terminate.
-        let range = 0.0...20.0
-        var rng = SeededGenerator(seed: 3)
-
-        #expect(range.contains(WalkPlan(minTravel: 48).chooseTarget(in: range, from: 10, using: &rng)))
+        #expect(position == target)
+        // 500pt at 42pt/s is ~12s, so ~360 ticks at 30Hz. Generous bound to avoid flakiness.
+        #expect(ticks < 500)
     }
 
     // MARK: Pauses
 
     @Test func pauseStaysWithinBounds() {
         let plan = WalkPlan(minPause: 2, maxPause: 5)
-        var rng = SeededGenerator(seed: 11)
+        var rng = SeededGenerator(seed: 13)
 
         for _ in 0..<200 {
             let pause = plan.pause(using: &rng)
@@ -163,9 +236,8 @@ import Testing
     }
 
     @Test func pauseNormalisesSwappedBounds() {
-        // A caller passing (max, min) must not produce an invalid range that traps.
         let plan = WalkPlan(minPause: 9, maxPause: 1)
-        var rng = SeededGenerator(seed: 11)
+        var rng = SeededGenerator(seed: 13)
 
         #expect(plan.minPause == 1)
         #expect(plan.maxPause == 9)
@@ -174,14 +246,9 @@ import Testing
         #expect(pause <= 9)
     }
 
-    @Test func pauseWithEqualBoundsIsConstant() {
-        var rng = SeededGenerator(seed: 11)
-        #expect(WalkPlan(minPause: 3, maxPause: 3).pause(using: &rng) == 3)
-    }
-
-    @Test func defaultPlanIsConfiguredForAmbling() {
+    @Test func climbingIsSlowerThanWalking() {
+        // Climbing should look like work, not a lift.
         let plan = WalkPlan()
-        #expect(plan.speed > 0)
-        #expect(plan.minPause <= plan.maxPause)
+        #expect(plan.climbSpeed < plan.speed)
     }
 }

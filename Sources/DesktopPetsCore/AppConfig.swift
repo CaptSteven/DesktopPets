@@ -123,6 +123,16 @@ public final class ConfigStore {
         return plan
     }
 
+    /// What the pet may do on a whim. Exposed here so it can be tuned the same way as everything
+    /// else, even though nothing in the UI changes it yet.
+    public func behaviorPlan() -> BehaviorPlan {
+        BehaviorPlan(performances: availablePerformances)
+    }
+
+    /// Performance states to offer the pet. Kept in one place so the list is not duplicated between
+    /// the machine, the controller and the art.
+    public var availablePerformances: [String] { ["mine", "fight", "tnt"] }
+
     public func reset() {
         for key in [Key.skinName, Key.petX, Key.petY, Key.muted, Key.walkSpeed,
                     Key.sleepAfter, Key.speechEnabled, Key.language] {
