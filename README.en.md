@@ -270,6 +270,7 @@ Each file is a flat object of category to phrases:
 | `./Scripts/make-placeholder-skin.sh` | Regenerate the placeholder skin. |
 | `./Scripts/pack-skins.sh [name ...]` | Pack loose frames into a sheet plus GIF previews. |
 | `./Scripts/build-app.sh` | Build and ad-hoc sign `dist/DesktopPets.app`. |
+| `./Scripts/measure-cpu.sh [seconds] [label]` | Measure the pet's real CPU cost, as a share of one core. |
 | `swift run DesktopPets --verify-skin` | Headless check: load the skin and phrases, print a summary, exit. |
 
 `--verify-skin` is the fastest way to check new art without launching a window. It is also the
@@ -302,6 +303,32 @@ adding a skin never touches `Package.swift`, and `build-app.sh` copies the direc
 - **The whole sprite window accepts clicks**, with no per-pixel passthrough (see "A trap this used
   to have" above). The empty ring around the pet therefore swallows clicks rather than passing them
   to whatever is behind.
+- **Idle cost is about 1.0% of a core asleep and 2.4% active.** See below.
+
+## CPU cost
+
+Measured with `measure-cpu.sh` (share of one core):
+
+| State | Before | After |
+| --- | --- | --- |
+| Asleep / still | 3.27% | **1.02%** |
+| Active (walking + idling) | 3.17% | **2.40%** |
+
+Two things the measurement showed:
+
+1. **The two states cost almost the same before** (3.27% vs 3.17%). Nothing moves while the pet is
+   asleep, so if window movement were the cost, that number would have been lower. It was not — so
+   the cost was in what happens every tick, and the only candidate was the forced redraw: the tick
+   runs at 30Hz while the sprite advances at 3-12fps, so roughly two ticks in three repainted a
+   byte-identical image.
+2. After the redraw fix, asleep fell to 1.02% but **active only reached 2.58%**. The remainder is
+   the walking itself — the window genuinely moves every tick, and that part is not waste. A final
+   pass avoids re-sending an unchanged window origin, which brought active to 2.40%.
+
+The redraw decision is a `SpriteFrameToken` (state + frame index) from the Core
+`AnimationController`. Getting it wrong does not look like a bug — it looks like an animation that
+has stopped — so twelve tests pin it down: sub-frame steps keep the token, crossing a frame changes
+it, a one-shot holds its last frame, and `restart()` must ask for a redraw.
 - **While the menu panel is open it installs a global mouse monitor** (mouse only — this needs no
   accessibility permission) so that clicking elsewhere dismisses it. Nothing is installed while the
   menu is closed.

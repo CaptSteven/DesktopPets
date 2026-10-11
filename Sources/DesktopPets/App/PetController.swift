@@ -24,6 +24,8 @@ final class PetController {
     private var hotspot: CGPoint
     private var lastTickTime: TimeInterval
     private var lastTransitionCount = 0
+    /// What was last handed to the view, so an unchanged frame does not force a redraw.
+    private var lastDrawnToken: SpriteFrameToken?
     private var previousActivity: PetActivity = .idle
     private var timer: Timer?
     /// Draws the pet's own menu. This is the only route to Quit from the sprite, so it deliberately
@@ -301,7 +303,13 @@ final class PetController {
 
         let desired = PetLayout.windowOrigin(anchor: anchor, size: windowSize, position: hotspot)
         let clamped = PetLayout.clamp(desired, size: windowSize, into: visible)
-        window.setFrameOrigin(clamped)
+
+        // While the pet is idling the answer does not change, and pushing an identical origin
+        // through to the window server thirty times a second is pure overhead. (While it is
+        // actually walking the origin does change every tick, so this only helps the idle case.)
+        if window.frame.origin != clamped {
+            window.setFrameOrigin(clamped)
+        }
 
         // Clamping can move the pet; keep the hotspot honest so the walk range stays truthful.
         if clamped != desired {
@@ -310,7 +318,17 @@ final class PetController {
     }
 
     private func updateAnimation(for activity: PetActivity, dt: Double) {
+        let previousState = animator.state
         animator.play(skin.animation(for: activity.animationState))
+
+        // Logged on change only. Which animation is playing is otherwise invisible from outside the
+        // process, which is what made "it still looks asleep after I clicked it" hard to pin down:
+        // the state machine had moved on, but nothing was re-drawing the sprite. The log lives here
+        // rather than in the controller because Core has no logger.
+        if animator.state != previousState {
+            let newState = animator.state
+            Log.sprite.notice("animation -> \(newState, privacy: .public)")
+        }
 
         // Replay one-shot reactions: a second click should restart the animation even though the
         // activity name did not change.
@@ -320,6 +338,15 @@ final class PetController {
         }
 
         animator.advance(by: dt)
+
+        // The tick runs at 30Hz; the sprite advances at 3-12fps. Assigning `frameImage` sets
+        // `needsDisplay`, which forces a redraw and a CoreAnimation commit, so doing it every tick
+        // repaints an identical image roughly two times out of three.
+        let token = animator.token
+        let facingChanged = view.facing != machine.facing
+        guard token != lastDrawnToken || facingChanged else { return }
+
+        lastDrawnToken = token
         view.facing = machine.facing
         view.frameImage = animator.frame
     }
