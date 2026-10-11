@@ -263,30 +263,31 @@ final class PetController {
         let dt = min(max(now - lastTickTime, 0), Self.maxTickDelta)
         lastTickTime = now
 
-        // The menu is anchored where it was opened, so the pet has to hold still while it is up —
-        // and it should not wander off or doze off mid-choice either. Animation keeps running so it
-        // does not look frozen.
-        if menuController.isVisible {
-            animator.advance(by: dt)
-            view.frameImage = animator.frame
-            return
-        }
+        // While the menu is up the pet holds its position, so the menu stays where it was opened.
+        // This used to freeze the whole tick instead, which meant clicking a sleeping pet left it
+        // stuck showing the sleep frame — the state had changed, but nothing ever re-drew it.
+        let isHeld = menuController.isVisible
 
         let windowSize = window.frame.size
         let visible = ScreenMapping.visibleFrame(nearest: hotspot)
         let walkable = machine.walkPlan.walkableRange(in: visible, petWidth: windowSize.width)
 
-        let activity = machine.tick(dt: dt, currentX: hotspot.x, walkableRange: walkable)
+        let activity = machine.tick(
+            dt: dt,
+            currentX: hotspot.x,
+            walkableRange: walkable,
+            holdStill: isHeld
+        )
 
         // The machine decides where to walk; the controller integrates the movement.
-        if activity == .walking, let targetX = machine.walkTargetX {
+        if !isHeld, activity == .walking, let targetX = machine.walkTargetX {
             let step = machine.walkPlan.step(fromX: hotspot.x, toX: targetX, dt: dt)
             hotspot.x = step.x
             if step.arrived { machine.arrivedAtDestination() }
         }
 
         // While dragging, the view is moving the window and would fight us for control.
-        if activity != .dragging {
+        if activity != .dragging, !isHeld {
             moveWindowToHotspot(visible: visible)
         }
 

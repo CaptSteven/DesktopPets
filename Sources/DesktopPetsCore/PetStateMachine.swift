@@ -96,11 +96,19 @@ public struct PetStateMachine {
 
     // MARK: Time
 
+    /// Advances time.
+    ///
+    /// `holdStill` keeps the pet from *starting* a walk. The caller uses it while a menu is open, so
+    /// the menu stays where it was anchored — but everything else (reacting, animating, speaking,
+    /// even dozing off) carries on. An earlier version froze the whole controller instead, which
+    /// meant clicking a sleeping pet left it stuck on the sleep frame: the state had changed, but
+    /// nothing ever re-drew it.
     @discardableResult
     public mutating func tick(
         dt: Double,
         currentX: Double,
-        walkableRange: ClosedRange<Double>
+        walkableRange: ClosedRange<Double>,
+        holdStill: Bool = false
     ) -> PetActivity {
         guard dt > 0, dt.isFinite else { return activity }
         timeInState += dt
@@ -124,7 +132,7 @@ public struct PetStateMachine {
             timeSinceInteraction += dt
             if timeSinceInteraction >= sleepAfter {
                 enterSleep()
-            } else {
+            } else if !holdStill {
                 timeUntilNextWalk -= dt
                 if timeUntilNextWalk <= 0 {
                     enterWalk(currentX: currentX, walkableRange: walkableRange)
@@ -136,7 +144,12 @@ public struct PetStateMachine {
             // Walking is autonomous, so it does not count as interaction: a pet left alone long
             // enough still lies down, even mid-stroll.
             timeSinceInteraction += dt
-            if timeSinceInteraction >= sleepAfter { enterSleep() }
+            if timeSinceInteraction >= sleepAfter {
+                enterSleep()
+            } else if holdStill {
+                // Don't keep strolling when the caller is not moving us.
+                enterIdle()
+            }
             return activity
         }
     }

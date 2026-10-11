@@ -29,6 +29,13 @@ final class AnimationController {
 
         guard state != animation.state || self.animation == nil else { return }
 
+        // Logged on change only. Which animation is playing is otherwise invisible from outside the
+        // process, which is what made "it still looks asleep after I clicked it" hard to pin down:
+        // the state machine had moved on, but nothing was re-drawing the sprite.
+        if state != animation.state {
+            Log.sprite.notice("animation -> \(animation.state, privacy: .public)")
+        }
+
         state = animation.state
         self.animation = animation
         clock = AnimationClock(

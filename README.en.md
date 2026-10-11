@@ -63,6 +63,10 @@ log stream --predicate 'subsystem == "com.desktoppets.DesktopPets"'
 The coordinates in `mouseDown at (x, y)` are window-local, which tells you which part of the sprite
 was hit.
 
+`animation -> <state>` prints whenever the animation changes. It exists to confirm that "the state
+machine moved on" and "the sprite was actually redrawn" stay in step — they once did not, and the
+symptom was a pet that still looked asleep after being clicked.
+
 ### A trap this used to have (fixed)
 
 Clickability used to be decided **per pixel**: the 30Hz tick sampled the alpha under the cursor and

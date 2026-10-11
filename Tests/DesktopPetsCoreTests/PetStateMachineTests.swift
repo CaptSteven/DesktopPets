@@ -30,12 +30,13 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
         _ machine: inout PetStateMachine,
         seconds: Double,
         currentX: Double = 500,
-        range: ClosedRange<Double> = pointRange
+        range: ClosedRange<Double> = pointRange,
+        holdStill: Bool = false
     ) {
         let step = 1.0 / 30.0
         var elapsed = 0.0
         while elapsed < seconds {
-            machine.tick(dt: step, currentX: currentX, walkableRange: range)
+            machine.tick(dt: step, currentX: currentX, walkableRange: range, holdStill: holdStill)
             elapsed += step
         }
     }
@@ -298,5 +299,74 @@ private let rangeToTheRight: ClosedRange<Double> = 1...1000
 
         #expect(machine.sleepAfter >= 1)
         #expect(machine.clickDuration > 0)
+    }
+
+    // MARK: Held still (a menu is open)
+
+    @Test func holdingStillStopsThePetFromStartingAWalk() {
+        var machine = makeMachine(initialPause: 0)
+
+        // Ten times longer than the initial pause, and it still should not set off.
+        advance(&machine, seconds: 10, holdStill: true)
+
+        #expect(machine.activity == .idle)
+        #expect(machine.walkTargetX == nil)
+    }
+
+    @Test func holdingStillStillLetsAReactionPlayOut() {
+        // The actual bug: with a menu open, clicking a sleeping pet left it stuck on the sleep
+        // frame, because the whole tick was skipped. The reaction has to run to completion.
+        var machine = makeMachine(clickDuration: 0.5, initialPause: 0)
+
+        machine.reactToClick()
+        #expect(machine.activity == .showingClick)
+
+        advance(&machine, seconds: 0.4, holdStill: true)
+        #expect(machine.activity == .showingClick, "still mid-reaction")
+
+        advance(&machine, seconds: 0.2, holdStill: true)
+        #expect(machine.activity == .idle, "the reaction finished even while held")
+    }
+
+    @Test func holdingStillEndsAWalkInProgress() {
+        var machine = makeMachine(initialPause: 0)
+
+        advance(&machine, seconds: 0.1)
+        #expect(machine.activity == .walking)
+
+        // The caller stops moving us, so staying in the walking state would just be an animation of
+        // a pet marching on the spot.
+        advance(&machine, seconds: 0.1, holdStill: true)
+        #expect(machine.activity == .idle)
+        #expect(machine.walkTargetX == nil)
+    }
+
+    @Test func holdingStillStillAllowsDozeOff() {
+        // Being held is not interaction, so a menu left open long enough still ends in a nap.
+        var machine = makeMachine(sleepAfter: 5, initialPause: 100)
+
+        advance(&machine, seconds: 3, holdStill: true)
+        #expect(machine.activity == .idle)
+
+        advance(&machine, seconds: 3, holdStill: true)
+        #expect(machine.activity == .sleeping)
+    }
+
+    @Test func aHeldPetResumesWalkingOnceReleased() {
+        var machine = makeMachine(initialPause: 0, minPause: 1, maxPause: 1)
+
+        advance(&machine, seconds: 10, holdStill: true)
+        #expect(machine.activity == .idle)
+
+        // Release: it should pick up again rather than staying stuck.
+        advance(&machine, seconds: 2)
+        #expect(machine.activity == .walking)
+    }
+
+    @Test func holdStillDefaultsToOff() {
+        // Every caller that does not pass the flag keeps the old behaviour.
+        var machine = makeMachine(initialPause: 0)
+        machine.tick(dt: 0.1, currentX: 500, walkableRange: pointRange)
+        #expect(machine.activity == .walking)
     }
 }
