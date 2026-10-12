@@ -246,9 +246,26 @@ import Testing
         #expect(pause <= 9)
     }
 
-    @Test func climbingIsSlowerThanWalking() {
-        // Climbing should look like work, not a lift.
+    @Test func aClimbIsBriskEnoughNotToDragOn() {
+        // Nothing is drawn to explain a climb any more — the pet just rises — so the only cost of a
+        // climb is how long it is out of action. At the original 28pt/s a typical climb held it for
+        // eight seconds, which is what made it feel intrusive.
         let plan = WalkPlan()
-        #expect(plan.climbSpeed < plan.speed)
+        let area = plan.walkableArea(
+            in: CGRect(x: 0, y: 0, width: 1470, height: 875),
+            petSize: CGSize(width: 128, height: 128)
+        )
+
+        // Mean |ΔY| when picking uniformly from a span is span/3.
+        let typicalClimb = (area.maxY - area.minY) / 3
+        let seconds = typicalClimb / plan.climbSpeed
+
+        #expect(seconds < 3.5, "a typical \(Int(typicalClimb))pt climb would take \(seconds)s")
+    }
+
+    @Test func climbingIsFasterThanWalking() {
+        // A climb is a transition, not a stroll: the pet should get where it is going and resume.
+        let plan = WalkPlan()
+        #expect(plan.climbSpeed > plan.speed)
     }
 }

@@ -41,13 +41,18 @@ public struct BehaviorPlan: Equatable {
     /// Chance that the next thing the pet does is a performance rather than a walk.
     public var performanceChance: Double
     /// Chance that a walk is replaced by a climb to a different height.
+    ///
+    /// Note this is checked *after* `performanceChance`, so the rate you actually observe is
+    /// `(1 - performanceChance) × climbChance`. At 0.35 and 0.13 that is ~8%, about one activity in
+    /// twelve — which is the point: changing height should be an occasional event rather than a
+    /// routine one, so whatever the pet does to get up there stays out of the way.
     public var climbChance: Double
     /// Skin states the pet may perform. Filtered at runtime to those the skin actually provides.
     public var performances: [String]
 
     public init(
         performanceChance: Double = 0.35,
-        climbChance: Double = 0.25,
+        climbChance: Double = 0.13,
         performances: [String] = ["mine", "fight", "tnt"]
     ) {
         self.performanceChance = Swift.min(Swift.max(performanceChance, 0), 1)
@@ -79,7 +84,8 @@ public struct PetStateMachine {
     ///
     /// `nil` means "assume the skin has everything", which is what a pure-logic caller wants. The
     /// app passes the real set, so the pet never plays a state it has no art for: a climb without
-    /// climbing frames would slide the pet up a ladder in its idle pose.
+    /// climbing frames would slide the pet up in its idle pose, which reads as levitation now that
+    /// nothing is drawn to explain it.
     public var animatableStates: Set<String>?
 
     public private(set) var activity: PetActivity = .idle
@@ -127,7 +133,7 @@ public struct PetStateMachine {
     }
 
     /// Whether a climb is worth attempting. Same reasoning as the performances: a pet that cannot
-    /// animate climbing would slide up the ladder in whatever pose it was already in.
+    /// animate climbing would rise through the air in whatever pose it was already in.
     private var canClimb: Bool {
         animatableStates?.contains("climb") ?? true
     }

@@ -9,7 +9,12 @@ import Foundation
 public struct WalkPlan: Equatable {
     /// Horizontal speed in points per second.
     public var speed: Double
-    /// Vertical speed while climbing. Slower than walking, because climbing should look like work.
+    /// Vertical speed while climbing, in points per second.
+    ///
+    /// Deliberately brisk. Nothing is drawn to explain a climb any more, so the pet is simply out
+    /// of action for as long as it takes — at the old 28pt/s a typical 233pt climb held it for
+    /// eight seconds. It also reads better: one 8-frame cycle at 8fps covers a second, so at
+    /// 90pt/s a cycle spans 90pt of travel instead of 28pt of near-standing-still.
     public var climbSpeed: Double
     /// How far the pet keeps its centre from the screen's visible edges.
     public var edgeInset: Double
@@ -18,12 +23,12 @@ public struct WalkPlan: Equatable {
     public var maxPause: Double
     /// A walk must cover at least this much ground to be worth starting; avoids twitchy micro-steps.
     public var minTravel: Double
-    /// A climb must change height by at least this much to be worth a ladder.
+    /// A climb must change height by at least this much to be worth starting.
     public var minClimb: Double
 
     public init(
         speed: Double = 42,
-        climbSpeed: Double = 28,
+        climbSpeed: Double = 90,
         edgeInset: Double = 24,
         minPause: Double = 2.5,
         maxPause: Double = 7,

@@ -33,11 +33,6 @@ final class PetController {
     private let menuController = PetMenuController()
     /// Always-reachable escape hatch in the menu bar, so "I cannot close it" is not possible.
     private let statusItem = StatusItemController()
-    /// The ladder shown while the pet climbs. Scenery only — it never takes a click.
-    private let ladder = LadderWindow()
-    /// Where the current climb started. The ladder spans the whole distance rather than following
-    /// the pet up, so this has to be remembered rather than recomputed each tick.
-    private var climbOriginY: Double?
 
     /// Set by the app delegate, which rebuilds the controller to pick up new or edited art.
     var onReloadRequested: (() -> Void)?
@@ -113,7 +108,6 @@ final class PetController {
         speech.stop()
         menuController.close()
         statusItem.remove()
-        ladder.hide()
         window.orderOut(nil)
     }
 
@@ -321,28 +315,7 @@ final class PetController {
         }
 
         updateAnimation(for: activity, dt: dt)
-        updateLadder(for: activity)
         updateSpeech(for: activity, dt: dt, visible: visible)
-    }
-
-    /// Shows the ladder while the pet is climbing, and hides it otherwise.
-    private func updateLadder(for activity: PetActivity) {
-        guard activity == .climbing, let targetY = machine.climbTargetY else {
-            if ladder.isVisible { ladder.hide() }
-            climbOriginY = nil
-            return
-        }
-
-        let origin = climbOriginY ?? hotspot.y
-        climbOriginY = origin
-
-        ladder.show(
-            from: origin,
-            to: targetY,
-            centreX: hotspot.x,
-            petWidth: window.frame.width,
-            behind: window
-        )
     }
 
     private func moveWindowToHotspot(visible: CGRect) {

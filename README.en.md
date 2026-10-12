@@ -215,21 +215,27 @@ Rules the loader enforces:
 | `drag` | | held by the mouse | 4 / 8 |
 | `sleep` | | 30s without interaction | 4 / 3 |
 | `click` | | poked | 6 / 12 (one-shot) |
-| `climb` | | going up or down a ladder | 6 / 8 |
+| `climb` | | changing height | 6 / 8 |
 | `mine` | | occasionally swinging a pickaxe | 8 / 10 |
 | `fight` | | occasionally swinging a sword | 8 / 10 |
 | `tnt` | | occasionally lobbing TNT | 10 / 10 (one-shot) |
 
-The last four are what the pet does on a whim: left alone, it picks between walking, climbing to a
-different height, and putting on a short performance. The probabilities live in `BehaviorPlan`
-(35% performance / 25% climb by default).
+The last four are what the pet does on a whim: left alone, it picks between walking, changing
+height, and putting on a short performance. The observed rates are roughly **1 in 12 for a height
+change and 1 in 3 for a performance**, the rest being walks. `BehaviorPlan` holds the raw
+probabilities (0.13 and 0.35), and note the height roll happens *after* the performance roll, so
+what you actually see is `(1 − 0.35) × 0.13 ≈ 8%`.
 
-**If you do not draw a state, the pet does not do that thing.** This matters because the ladder is
-*drawn by the app*, not loaded from the skin — so a skin without `climb` frames would otherwise
-slide up a ladder while standing still in whatever pose it was already in. A missing
-`climb`, `mine`, `fight` or `tnt` is skipped instead, and there is a test pinning that down.
+**If you do not draw a state, the pet does not do that thing.** This matters most for `climb`:
+**nothing is drawn to get the pet up there** — it simply rises on its own. (An earlier version drew
+a ladder, which obstructed far too much, and was removed.) So a skin without `climb` frames would
+rise through the air in whatever pose it was already in. A missing `climb`, `mine`, `fight` or
+`tnt` is skipped instead, and there is a test pinning that down.
 
 `climb` is the only state that changes the pet's height: walking always stays on the current line.
+It is deliberately brisk (`climbSpeed`, 90pt/s by default — faster than walking), because with
+nothing drawn the entire cost of a climb is how long the pet is busy; at the original 28pt/s a
+typical climb took eight seconds.
 
 `skin.json`:
 
