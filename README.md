@@ -1,5 +1,13 @@
 # DesktopPets
 
+> macOS 菜单栏与桌面宠物：行走、拖拽、气泡对话及可切换皮肤。
+
+**技术栈：** Swift · AppKit · Sprite sheet
+
+**使用边界：** 包含皮肤打包脚本；功能和运行环境以当前源码为准。
+
+---
+
 中文 | [English](README.en.md)
 
 一个小巧的 macOS 桌宠：一个无边框、始终置顶的角色，会在屏幕底部来回散步，可以用鼠标拖着走，还会弹气泡说话。
@@ -335,3 +343,5 @@ let expected: CGFloat = 816
 
 - **开机自启**（`Sources/DesktopPets/Launcher/` 目前是空目录）和设置面板（`Settings/`）。目前菜单 + 皮肤列表够用。
 - 同时养多只宠物，以及窗口避让。
+
+<!-- 更新备注：YANG KAISEN，2026-11-11；改写与核对依据见工作区变更记录。 -->
