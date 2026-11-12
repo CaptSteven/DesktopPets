@@ -47,8 +47,6 @@ or after 30 seconds of no activity.
 
 ## Diagnosing "I cannot click the pet"
 
-## Diagnosing "I cannot click the pet"
-
 The whole sprite window takes clicks now, with no per-pixel test, so there are only two things that
 can go wrong, and the log distinguishes them:
 
